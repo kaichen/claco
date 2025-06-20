@@ -1,6 +1,10 @@
 # claco - Claude Code CLI Inspector
 
+![cover](assets/cover-show-me-your-talk.png)
+
 `claco` (Claude Code Inspector) is a CLI tool for inspecting Claude Code sessions and project data stored in the `~/.claude` directory.
+
+If you're a Claude Code user, you can use this claco tool to quickly print out all the commands you've issued in the current project with just one click.
 
 ## Installation
 
