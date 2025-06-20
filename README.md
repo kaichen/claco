@@ -4,8 +4,19 @@
 
 ## Installation
 
+### From source
 ```bash
 cargo install --path .
+```
+
+### From crates.io (when published)
+```bash
+cargo install claco
+```
+
+### From GitHub
+```bash
+cargo install --git https://github.com/kaichen/claco
 ```
 
 ## Usage
@@ -14,6 +25,8 @@ cargo install --path .
 ```bash
 # Show all user messages in the current directory's Claude project
 claco history
+# Or use the alias
+claco showmeyourtalk
 
 # Show messages from a specific session
 claco history --session 48fb8f8e-48e9-4eb8-b035-4b72deb386cf

@@ -5,6 +5,15 @@ edition = "2021"
 authors = ["Kai Chen <kai@thekaiway.com>"]
 description = "Claude Code CLI Inspector - inspect Claude Code sessions and project data"
 license = "MIT"
+repository = "https://github.com/kaichen/claco"
+homepage = "https://github.com/kaichen/claco"
+readme = "README.md"
+keywords = ["claude", "cli", "inspector", "development-tools"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "claco"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
