@@ -16,6 +16,7 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// List all user input messages for the current project
+    #[command(alias = "showmeyourtalk")]
     History {
         /// Show messages from a specific session ID
         #[arg(short, long)]
