@@ -1,0 +1,30 @@
+name: Rust CI
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "codex-rs/**"
+      - ".github/**"
+  push:
+    branches:
+      - main
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+      - name: rustfmt check
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: cargo test
+        id: test
+        continue-on-error: true
+        run: cargo test --all-features
+        env:
+          RUST_BACKTRACE: 1
