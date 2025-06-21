@@ -6,6 +6,18 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
+use chrono::{DateTime, Local};
+
+fn format_timestamp_local(timestamp_str: &str) -> String {
+    // Try to parse the timestamp as UTC and convert to local timezone
+    match DateTime::parse_from_rfc3339(timestamp_str) {
+        Ok(dt) => {
+            let local_dt: DateTime<Local> = dt.with_timezone(&Local);
+            local_dt.format("%Y-%m-%d %H:%M:%S").to_string()
+        }
+        Err(_) => timestamp_str.to_string(), // If parsing fails, return original
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -145,13 +157,13 @@ fn handle_history(session_id: Option<String>) -> Result<()> {
                     if let Some(captures) = command_regex.captures(&entry.message.content) {
                         // Print only the slash command
                         if let Some(command) = captures.get(1) {
-                            println!("{}: {}", entry.timestamp, command.as_str());
+                            println!("{}: {}", format_timestamp_local(&entry.timestamp), command.as_str());
                             // Skip the next line after a slash command
                             skip_next = true;
                         }
                     } else {
                         // No command-name tag found, print the full content
-                        println!("{}: {}", entry.timestamp, entry.message.content);
+                        println!("{}: {}", format_timestamp_local(&entry.timestamp), entry.message.content);
                     }
                 }
             }
@@ -268,7 +280,7 @@ fn handle_session(session_id: Option<String>) -> Result<()> {
             }
 
             if let Some(timestamp) = first_timestamp {
-                println!("Started: {}", timestamp);
+                println!("Started: {}", format_timestamp_local(&timestamp));
             }
 
             if let Some(message) = first_user_message {
