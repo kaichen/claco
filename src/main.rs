@@ -1,15 +1,14 @@
 use anyhow::Result;
 use chrono::{DateTime, Local};
 use claco::{
-    claude_home, desanitize_project_path, ide_dir, load_settings, project_settings_path, 
-    save_settings, user_settings_path, Cli, Commands, CommandsSubcommand, Hook, HookMatcher, 
-    HooksAction, LockFile, Scope, SessionEntry, Settings,
+    claude_home, desanitize_project_path, ide_dir, load_settings, project_settings_path,
+    save_settings, user_settings_path, Cli, Commands, CommandsSubcommand, Hook, HookMatcher,
+    HooksAction, LockFile, Scope, SessionEntry,
 };
 use clap::Parser;
 use regex::Regex;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
-use std::collections::HashMap;
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
 
@@ -400,9 +399,12 @@ fn handle_live() -> Result<()> {
 fn handle_hooks(action: HooksAction) -> Result<()> {
     match action {
         HooksAction::List { scope } => handle_hooks_list(scope),
-        HooksAction::Add { scope, event, matcher, command } => {
-            handle_hooks_add(scope, event, matcher, command)
-        }
+        HooksAction::Add {
+            scope,
+            event,
+            matcher,
+            command,
+        } => handle_hooks_add(scope, event, matcher, command),
         HooksAction::Remove { interactive } => handle_hooks_remove(interactive),
     }
 }
@@ -418,17 +420,17 @@ fn handle_hooks_list(scope: String) -> Result<()> {
     };
 
     let settings = load_settings(&settings_path)?;
-    
+
     if let Some(hooks) = &settings.hooks {
         println!("Hooks in {} scope:", scope);
         println!("Settings file: {}", settings_path.display());
         println!();
-        
+
         if hooks.events.is_empty() {
             println!("No hooks found");
             return Ok(());
         }
-        
+
         for (event, matchers) in &hooks.events {
             println!("Event: {}", event);
             for matcher in matchers {
@@ -441,7 +443,7 @@ fn handle_hooks_list(scope: String) -> Result<()> {
     } else {
         println!("No hooks found in {} scope", scope);
     }
-    
+
     Ok(())
 }
 
@@ -457,28 +459,36 @@ fn handle_hooks_add(scope: String, event: String, matcher: String, command: Stri
 
     // Validate event type
     let valid_events = vec![
-        "PreToolUse", "ToolPattern", "Notification", "Stop", "SubagentStop", "PreCompact"
+        "PreToolUse",
+        "ToolPattern",
+        "Notification",
+        "Stop",
+        "SubagentStop",
+        "PreCompact",
     ];
     if !valid_events.contains(&event.as_str()) {
-        eprintln!("Error: Invalid event '{}'. Valid events are: {:?}", event, valid_events);
+        eprintln!(
+            "Error: Invalid event '{}'. Valid events are: {:?}",
+            event, valid_events
+        );
         return Ok(());
     }
 
     let mut settings = load_settings(&settings_path)?;
-    
+
     // Initialize hooks if not present
     if settings.hooks.is_none() {
         settings.hooks = Some(Default::default());
     }
-    
+
     let hooks = settings.hooks.as_mut().unwrap();
-    
+
     // Get or create the event entry
     let event_matchers = hooks.events.entry(event.clone()).or_insert_with(Vec::new);
-    
+
     // Find existing matcher or create new one
     let matcher_entry = event_matchers.iter_mut().find(|m| m.matcher == matcher);
-    
+
     if let Some(matcher_entry) = matcher_entry {
         // Add hook to existing matcher
         matcher_entry.hooks.push(Hook {
@@ -495,12 +505,12 @@ fn handle_hooks_add(scope: String, event: String, matcher: String, command: Stri
             }],
         });
     }
-    
+
     save_settings(&settings_path, &settings)?;
-    
+
     println!("Added hook: {} -> {}:{}", event, matcher, command);
     println!("Settings file: {}", settings_path.display());
-    
+
     Ok(())
 }
 
@@ -509,17 +519,17 @@ fn handle_hooks_remove(interactive: bool) -> Result<()> {
         eprintln!("Error: Non-interactive mode is not supported yet");
         return Ok(());
     }
-    
+
     // Load hooks from both scopes
     let user_settings_path = user_settings_path();
     let project_settings_path = project_settings_path();
-    
+
     let user_settings = load_settings(&user_settings_path)?;
     let project_settings = load_settings(&project_settings_path)?;
-    
+
     // Collect all hooks with their metadata
     let mut hooks_list = Vec::new();
-    
+
     // Add user hooks
     if let Some(hooks) = &user_settings.hooks {
         for (event, matchers) in &hooks.events {
@@ -536,7 +546,7 @@ fn handle_hooks_remove(interactive: bool) -> Result<()> {
             }
         }
     }
-    
+
     // Add project hooks
     if let Some(hooks) = &project_settings.hooks {
         for (event, matchers) in &hooks.events {
@@ -553,50 +563,51 @@ fn handle_hooks_remove(interactive: bool) -> Result<()> {
             }
         }
     }
-    
+
     if hooks_list.is_empty() {
         println!("No hooks found");
         return Ok(());
     }
-    
+
     // Display hooks for selection
     println!("Select hooks to remove:");
     for (i, (hook_display, scope, event, _, _)) in hooks_list.iter().enumerate() {
         println!("{}. [{}] {}: {}", i + 1, scope, event, hook_display);
     }
-    
+
     println!("\nEnter hook numbers to remove (comma-separated, or 'all' for all hooks):");
     print!("> ");
     io::stdout().flush()?;
-    
+
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
     let input = input.trim();
-    
+
     if input.is_empty() {
         println!("No hooks selected");
         return Ok(());
     }
-    
+
     let indices_to_remove: Vec<usize> = if input == "all" {
         (0..hooks_list.len()).collect()
     } else {
-        input.split(',')
+        input
+            .split(',')
             .filter_map(|s| s.trim().parse::<usize>().ok())
             .filter(|&i| i > 0 && i <= hooks_list.len())
             .map(|i| i - 1)
             .collect()
     };
-    
+
     if indices_to_remove.is_empty() {
         println!("No valid hooks selected");
         return Ok(());
     }
-    
+
     // Group removals by scope
     let mut user_removals = Vec::new();
     let mut project_removals = Vec::new();
-    
+
     for &idx in &indices_to_remove {
         let (_, scope, event, matcher_idx, hook_idx) = &hooks_list[idx];
         match scope.as_str() {
@@ -605,7 +616,7 @@ fn handle_hooks_remove(interactive: bool) -> Result<()> {
             _ => {}
         }
     }
-    
+
     // Remove from user settings
     if !user_removals.is_empty() {
         let mut user_settings = load_settings(&user_settings_path)?;
@@ -628,7 +639,7 @@ fn handle_hooks_remove(interactive: bool) -> Result<()> {
         }
         save_settings(&user_settings_path, &user_settings)?;
     }
-    
+
     // Remove from project settings
     if !project_removals.is_empty() {
         let mut project_settings = load_settings(&project_settings_path)?;
@@ -651,9 +662,9 @@ fn handle_hooks_remove(interactive: bool) -> Result<()> {
         }
         save_settings(&project_settings_path, &project_settings)?;
     }
-    
+
     println!("Removed {} hooks", indices_to_remove.len());
-    
+
     Ok(())
 }
 
@@ -733,7 +744,7 @@ fn handle_commands_list(scope: Option<Scope>) -> Result<()> {
     Ok(())
 }
 
-fn list_commands_recursive(dir: &std::path::Path, namespace: &str, scope: &Scope) -> Result<()> {
+fn list_commands_recursive(dir: &std::path::Path, namespace: &str, _scope: &Scope) -> Result<()> {
     let entries = fs::read_dir(dir)?;
     let mut commands = Vec::new();
     let mut subdirs = Vec::new();
@@ -775,7 +786,7 @@ fn list_commands_recursive(dir: &std::path::Path, namespace: &str, scope: &Scope
             format!("{}:{}", namespace, subdir)
         };
 
-        list_commands_recursive(&subdir_path, &new_namespace, scope)?;
+        list_commands_recursive(&subdir_path, &new_namespace, _scope)?;
     }
 
     Ok(())
@@ -838,7 +849,7 @@ async fn handle_commands_import(url: String, scope: Scope) -> Result<()> {
 
     // Use gh to download the file
     let output = Command::new("gh")
-        .args(&[
+        .args([
             "api",
             &format!(
                 "/repos/{}/{}/contents/{}?ref={}",
