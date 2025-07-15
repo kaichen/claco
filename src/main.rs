@@ -1,4 +1,5 @@
 use anyhow::Result;
+use chrono::{DateTime, Local};
 use claco::{claude_home, desanitize_project_path, ide_dir, Cli, Commands, LockFile, SessionEntry};
 use clap::Parser;
 use regex::Regex;
@@ -6,7 +7,6 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
-use chrono::{DateTime, Local};
 
 fn format_timestamp_local(timestamp_str: &str) -> String {
     // Try to parse the timestamp as UTC and convert to local timezone
@@ -157,13 +157,21 @@ fn handle_history(session_id: Option<String>) -> Result<()> {
                     if let Some(captures) = command_regex.captures(&entry.message.content) {
                         // Print only the slash command
                         if let Some(command) = captures.get(1) {
-                            println!("{}: {}", format_timestamp_local(&entry.timestamp), command.as_str());
+                            println!(
+                                "{}: {}",
+                                format_timestamp_local(&entry.timestamp),
+                                command.as_str()
+                            );
                             // Skip the next line after a slash command
                             skip_next = true;
                         }
                     } else {
                         // No command-name tag found, print the full content
-                        println!("{}: {}", format_timestamp_local(&entry.timestamp), entry.message.content);
+                        println!(
+                            "{}: {}",
+                            format_timestamp_local(&entry.timestamp),
+                            entry.message.content
+                        );
                     }
                 }
             }
