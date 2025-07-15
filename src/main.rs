@@ -1,6 +1,9 @@
 use anyhow::Result;
 use chrono::{DateTime, Local};
-use claco::{claude_home, desanitize_project_path, ide_dir, Cli, Commands, CommandsSubcommand, LockFile, SessionEntry, Scope};
+use claco::{
+    claude_home, desanitize_project_path, ide_dir, Cli, Commands, CommandsSubcommand, LockFile,
+    Scope, SessionEntry,
+};
 use clap::Parser;
 use regex::Regex;
 use std::fs;
@@ -411,23 +414,59 @@ fn get_commands_dir(scope: &Scope) -> Result<std::path::PathBuf> {
     }
 }
 
-fn handle_commands_list(scope: Scope) -> Result<()> {
-    let commands_dir = get_commands_dir(&scope)?;
-    
-    if !commands_dir.exists() {
-        println!("No commands directory found at: {}", commands_dir.display());
-        return Ok(());
+fn handle_commands_list(scope: Option<Scope>) -> Result<()> {
+    match scope {
+        Some(specific_scope) => {
+            // Show commands for a specific scope
+            let commands_dir = get_commands_dir(&specific_scope)?;
+
+            if !commands_dir.exists() {
+                println!("No commands directory found at: {}", commands_dir.display());
+                return Ok(());
+            }
+
+            let scope_label = match specific_scope {
+                Scope::User => "user",
+                Scope::Project => "project",
+            };
+
+            println!(
+                "Slash commands ({}): {}",
+                scope_label,
+                commands_dir.display()
+            );
+            println!();
+
+            list_commands_recursive(&commands_dir, "", &specific_scope)?;
+        }
+        None => {
+            // Show commands from both user and project scopes
+            println!("Slash commands:");
+            println!();
+
+            // List user commands
+            let user_scope = Scope::User;
+            let user_commands_dir = get_commands_dir(&user_scope)?;
+            if user_commands_dir.exists() {
+                println!("User commands: {}", user_commands_dir.display());
+                list_commands_recursive(&user_commands_dir, "", &user_scope)?;
+                println!();
+            }
+
+            // List project commands
+            let project_scope = Scope::Project;
+            let project_commands_dir = get_commands_dir(&project_scope)?;
+            if project_commands_dir.exists() {
+                println!("Project commands: {}", project_commands_dir.display());
+                list_commands_recursive(&project_commands_dir, "", &project_scope)?;
+            } else {
+                println!(
+                    "No project commands found at: {}",
+                    project_commands_dir.display()
+                );
+            }
+        }
     }
-
-    let scope_label = match scope {
-        Scope::User => "user",
-        Scope::Project => "project",
-    };
-
-    println!("Slash commands ({}): {}", scope_label, commands_dir.display());
-    println!();
-
-    list_commands_recursive(&commands_dir, "", &scope)?;
     Ok(())
 }
 
@@ -439,7 +478,7 @@ fn list_commands_recursive(dir: &std::path::Path, namespace: &str, scope: &Scope
     for entry in entries {
         let entry = entry?;
         let path = entry.path();
-        
+
         if path.is_dir() {
             subdirs.push(entry.file_name().to_string_lossy().to_string());
         } else if path.extension().and_then(|s| s.to_str()) == Some("md") {
@@ -460,13 +499,8 @@ fn list_commands_recursive(dir: &std::path::Path, namespace: &str, scope: &Scope
         } else {
             format!("/{}:{}", namespace, command)
         };
-        
-        let scope_indicator = match scope {
-            Scope::User => "(user)",
-            Scope::Project => "(project)",
-        };
-        
-        println!("{} {}", full_name, scope_indicator);
+
+        println!("  {}", full_name);
     }
 
     // Recursively process subdirectories
@@ -477,7 +511,7 @@ fn list_commands_recursive(dir: &std::path::Path, namespace: &str, scope: &Scope
         } else {
             format!("{}:{}", namespace, subdir)
         };
-        
+
         list_commands_recursive(&subdir_path, &new_namespace, scope)?;
     }
 
@@ -486,44 +520,50 @@ fn list_commands_recursive(dir: &std::path::Path, namespace: &str, scope: &Scope
 
 async fn handle_commands_import(url: String, scope: Scope) -> Result<()> {
     let commands_dir = get_commands_dir(&scope)?;
-    
+
     // Create commands directory if it doesn't exist
     fs::create_dir_all(&commands_dir)?;
-    
+
     // Download the markdown file
     let response = reqwest::get(&url).await?;
     let content = response.text().await?;
-    
+
     // Extract filename from URL
     let parsed_url = url::Url::parse(&url)?;
-    let filename = parsed_url.path_segments()
+    let filename = parsed_url
+        .path_segments()
         .and_then(|segments| segments.last())
         .unwrap_or("command.md");
-    
+
     // Ensure it's a markdown file
     let filename = if filename.ends_with(".md") {
         filename.to_string()
     } else {
         format!("{}.md", filename)
     };
-    
+
     let file_path = commands_dir.join(&filename);
-    
+
     // Write the content to the file
     fs::write(&file_path, content)?;
-    
+
     let scope_label = match scope {
         Scope::User => "user",
         Scope::Project => "project",
     };
-    
-    println!("Imported command from {} to {} scope: {}", url, scope_label, file_path.display());
+
+    println!(
+        "Imported command from {} to {} scope: {}",
+        url,
+        scope_label,
+        file_path.display()
+    );
     Ok(())
 }
 
 fn handle_commands_clean(scope: Scope) -> Result<()> {
     let commands_dir = get_commands_dir(&scope)?;
-    
+
     if !commands_dir.exists() {
         println!("No commands directory found at: {}", commands_dir.display());
         return Ok(());
@@ -536,43 +576,48 @@ fn handle_commands_clean(scope: Scope) -> Result<()> {
 
     // Count existing commands
     let command_count = count_commands_recursive(&commands_dir)?;
-    
+
     if command_count == 0 {
         println!("No commands found in {} scope", scope_label);
         return Ok(());
     }
 
-    println!("Found {} command(s) in {} scope at: {}", command_count, scope_label, commands_dir.display());
+    println!(
+        "Found {} command(s) in {} scope at: {}",
+        command_count,
+        scope_label,
+        commands_dir.display()
+    );
     print!("Are you sure you want to remove all commands? (y/N): ");
     io::stdout().flush()?;
-    
+
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
-    
+
     if input.trim().to_lowercase() == "y" || input.trim().to_lowercase() == "yes" {
         fs::remove_dir_all(&commands_dir)?;
         println!("Removed all commands from {} scope", scope_label);
     } else {
         println!("Operation cancelled");
     }
-    
+
     Ok(())
 }
 
 fn count_commands_recursive(dir: &std::path::Path) -> Result<usize> {
     let mut count = 0;
-    
+
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
-        
+
         if path.is_dir() {
             count += count_commands_recursive(&path)?;
         } else if path.extension().and_then(|s| s.to_str()) == Some("md") {
             count += 1;
         }
     }
-    
+
     Ok(count)
 }
 

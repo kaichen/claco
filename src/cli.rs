@@ -40,9 +40,9 @@ pub enum Commands {
 pub enum CommandsSubcommand {
     /// List all slash commands
     List {
-        /// Scope: user or project (defaults to project)
-        #[arg(long, value_enum, default_value = "project")]
-        scope: Scope,
+        /// Scope: user or project (defaults to showing both)
+        #[arg(long, value_enum)]
+        scope: Option<Scope>,
     },
     /// Import slash command from markdown file from GitHub
     Import {
