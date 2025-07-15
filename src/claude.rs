@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Represents a single entry in a Claude session JSONL file
@@ -39,6 +40,35 @@ pub struct LockFile {
     pub transport: String,
     #[serde(rename = "authToken")]
     pub auth_token: String,
+}
+
+/// Represents a single hook configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Hook {
+    #[serde(rename = "type")]
+    pub hook_type: String,
+    pub command: String,
+}
+
+/// Represents a hook matcher with its associated hooks
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HookMatcher {
+    pub matcher: String,
+    pub hooks: Vec<Hook>,
+}
+
+/// Represents the hooks section in settings.json
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Hooks {
+    #[serde(flatten)]
+    pub events: HashMap<String, Vec<HookMatcher>>,
+}
+
+/// Represents a Claude settings.json file
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Settings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hooks: Option<Hooks>,
 }
 
 /// Get the Claude home directory
@@ -82,6 +112,42 @@ pub fn project_dir(cwd: &str) -> PathBuf {
 /// Get the path to the ide directory
 pub fn ide_dir() -> PathBuf {
     claude_home().join("ide")
+}
+
+/// Get the path to user settings.json
+pub fn user_settings_path() -> PathBuf {
+    claude_home().join("settings.json")
+}
+
+/// Get the path to project settings.json
+pub fn project_settings_path() -> PathBuf {
+    PathBuf::from(".claude").join("settings.json")
+}
+
+/// Load settings from a file path
+pub fn load_settings(path: &PathBuf) -> anyhow::Result<Settings> {
+    use std::fs;
+    
+    if !path.exists() {
+        return Ok(Settings::default());
+    }
+    
+    let content = fs::read_to_string(path)?;
+    let settings: Settings = serde_json::from_str(&content)?;
+    Ok(settings)
+}
+
+/// Save settings to a file path
+pub fn save_settings(path: &PathBuf, settings: &Settings) -> anyhow::Result<()> {
+    use std::fs;
+    
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    
+    let content = serde_json::to_string_pretty(settings)?;
+    fs::write(path, content)?;
+    Ok(())
 }
 
 #[cfg(test)]
