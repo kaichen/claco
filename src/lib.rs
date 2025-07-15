@@ -3,5 +3,5 @@ pub mod cli;
 pub mod config;
 
 pub use claude::*;
-pub use cli::{Cli, Commands, HooksAction};
+pub use cli::{Cli, Commands, HooksAction, CommandsSubcommand, Scope};
 pub use config::Config;
