@@ -31,4 +31,42 @@ pub enum Commands {
     Projects,
     /// List all active Claude sessions
     Live,
+    /// Manage slash commands
+    #[command(subcommand)]
+    Commands(CommandsSubcommand),
+}
+
+#[derive(Subcommand)]
+pub enum CommandsSubcommand {
+    /// List all slash commands
+    List {
+        /// Scope: user or project (defaults to showing both)
+        #[arg(long, value_enum)]
+        scope: Option<Scope>,
+    },
+    /// Import slash command from GitHub markdown file
+    Import {
+        /// GitHub URL to the markdown file (e.g., https://github.com/owner/repo/blob/main/path/to/file.md)
+        url: String,
+        /// Scope: user or project (defaults to project)
+        #[arg(long, value_enum, default_value = "project")]
+        scope: Scope,
+    },
+    /// Remove all slash commands (with confirmation)
+    Clean {
+        /// Scope: user or project (defaults to project)
+        #[arg(long, value_enum, default_value = "project")]
+        scope: Scope,
+    },
+    /// Generate command from prompt via Claude Code itself
+    Generate {
+        /// The prompt to generate a command from
+        prompt: String,
+    },
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum Scope {
+    User,
+    Project,
 }
