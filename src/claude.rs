@@ -127,11 +127,11 @@ pub fn project_settings_path() -> PathBuf {
 /// Load settings from a file path
 pub fn load_settings(path: &PathBuf) -> anyhow::Result<Settings> {
     use std::fs;
-    
+
     if !path.exists() {
         return Ok(Settings::default());
     }
-    
+
     let content = fs::read_to_string(path)?;
     let settings: Settings = serde_json::from_str(&content)?;
     Ok(settings)
@@ -140,11 +140,11 @@ pub fn load_settings(path: &PathBuf) -> anyhow::Result<Settings> {
 /// Save settings to a file path
 pub fn save_settings(path: &PathBuf, settings: &Settings) -> anyhow::Result<()> {
     use std::fs;
-    
+
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    
+
     let content = serde_json::to_string_pretty(settings)?;
     fs::write(path, content)?;
     Ok(())

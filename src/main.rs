@@ -405,43 +405,121 @@ fn handle_hooks(action: HooksAction) -> Result<()> {
             matcher,
             command,
         } => handle_hooks_add(scope, event, matcher, command),
-        HooksAction::Remove { interactive } => handle_hooks_remove(interactive),
+        HooksAction::Delete { interactive } => handle_hooks_delete(interactive),
     }
 }
 
-fn handle_hooks_list(scope: String) -> Result<()> {
-    let settings_path = match scope.as_str() {
-        "user" => user_settings_path(),
-        "project" => project_settings_path(),
-        _ => {
-            eprintln!("Error: Invalid scope '{}'. Use 'user' or 'project'", scope);
-            return Ok(());
+fn handle_hooks_list(scope: Option<String>) -> Result<()> {
+    match scope {
+        Some(specific_scope) => {
+            // Show hooks for a specific scope
+            let settings_path = match specific_scope.as_str() {
+                "user" => user_settings_path(),
+                "project" => project_settings_path(),
+                _ => {
+                    eprintln!("Error: Invalid scope '{}'. Use 'user' or 'project'", specific_scope);
+                    return Ok(());
+                }
+            };
+
+            let settings = load_settings(&settings_path)?;
+
+            if let Some(hooks) = &settings.hooks {
+                println!("Hooks in {} scope:", specific_scope);
+                println!("Settings file: {}", settings_path.display());
+                println!();
+
+                if hooks.events.is_empty() {
+                    println!("No hooks found");
+                    return Ok(());
+                }
+
+                for (event, matchers) in &hooks.events {
+                    println!("Event: {}", event);
+                    for matcher in matchers {
+                        for hook in &matcher.hooks {
+                            let mut parts = vec![];
+                            if !matcher.matcher.is_empty() {
+                                parts.push(format!("matcher={}", matcher.matcher));
+                            }
+                            if !hook.command.is_empty() {
+                                parts.push(format!("command=\"{}\"", hook.command));
+                            }
+                            if !hook.hook_type.is_empty() && hook.hook_type != "command" {
+                                parts.push(format!("type={}", hook.hook_type));
+                            }
+                            println!("  {}", parts.join(" "));
+                        }
+                    }
+                    println!();
+                }
+            } else {
+                println!("No hooks found in {} scope", specific_scope);
+            }
         }
-    };
-
-    let settings = load_settings(&settings_path)?;
-
-    if let Some(hooks) = &settings.hooks {
-        println!("Hooks in {} scope:", scope);
-        println!("Settings file: {}", settings_path.display());
-        println!();
-
-        if hooks.events.is_empty() {
-            println!("No hooks found");
-            return Ok(());
-        }
-
-        for (event, matchers) in &hooks.events {
-            println!("Event: {}", event);
-            for matcher in matchers {
-                for hook in &matcher.hooks {
-                    println!("  {}:{}", matcher.matcher, hook.command);
+        None => {
+            // Show hooks from both user and project scopes
+            // List user hooks
+            let user_settings_path = user_settings_path();
+            let user_settings = load_settings(&user_settings_path)?;
+            
+            if let Some(hooks) = &user_settings.hooks {
+                if !hooks.events.is_empty() {
+                    println!("User hooks: {}", user_settings_path.display());
+                    for (event, matchers) in &hooks.events {
+                        println!("  Event: {}", event);
+                        for matcher in matchers {
+                            for hook in &matcher.hooks {
+                                let mut parts = vec![];
+                                if !matcher.matcher.is_empty() {
+                                    parts.push(format!("matcher={}", matcher.matcher));
+                                }
+                                if !hook.command.is_empty() {
+                                    parts.push(format!("command=\"{}\"", hook.command));
+                                }
+                                if !hook.hook_type.is_empty() && hook.hook_type != "command" {
+                                    parts.push(format!("type={}", hook.hook_type));
+                                }
+                                println!("    {}", parts.join(" "));
+                            }
+                        }
+                    }
+                    println!();
                 }
             }
-            println!();
+            
+            // List project hooks
+            let project_settings_path = project_settings_path();
+            let project_settings = load_settings(&project_settings_path)?;
+            
+            if let Some(hooks) = &project_settings.hooks {
+                if !hooks.events.is_empty() {
+                    println!("Project hooks: {}", project_settings_path.display());
+                    for (event, matchers) in &hooks.events {
+                        println!("  Event: {}", event);
+                        for matcher in matchers {
+                            for hook in &matcher.hooks {
+                                let mut parts = vec![];
+                                if !matcher.matcher.is_empty() {
+                                    parts.push(format!("matcher={}", matcher.matcher));
+                                }
+                                if !hook.command.is_empty() {
+                                    parts.push(format!("command=\"{}\"", hook.command));
+                                }
+                                if !hook.hook_type.is_empty() && hook.hook_type != "command" {
+                                    parts.push(format!("type={}", hook.hook_type));
+                                }
+                                println!("    {}", parts.join(" "));
+                            }
+                        }
+                    }
+                } else {
+                    println!("No project hooks found at: {}", project_settings_path.display());
+                }
+            } else {
+                println!("No project hooks found at: {}", project_settings_path.display());
+            }
         }
-    } else {
-        println!("No hooks found in {} scope", scope);
     }
 
     Ok(())
@@ -508,13 +586,20 @@ fn handle_hooks_add(scope: String, event: String, matcher: String, command: Stri
 
     save_settings(&settings_path, &settings)?;
 
-    println!("Added hook: {} -> {}:{}", event, matcher, command);
+    let mut parts = vec![];
+    if !matcher.is_empty() {
+        parts.push(format!("matcher={}", matcher));
+    }
+    if !command.is_empty() {
+        parts.push(format!("command=\"{}\"", command));
+    }
+    println!("Added hook: {} -> {}", event, parts.join(" "));
     println!("Settings file: {}", settings_path.display());
 
     Ok(())
 }
 
-fn handle_hooks_remove(interactive: bool) -> Result<()> {
+fn handle_hooks_delete(interactive: bool) -> Result<()> {
     if !interactive {
         eprintln!("Error: Non-interactive mode is not supported yet");
         return Ok(());
@@ -535,8 +620,18 @@ fn handle_hooks_remove(interactive: bool) -> Result<()> {
         for (event, matchers) in &hooks.events {
             for (matcher_idx, matcher) in matchers.iter().enumerate() {
                 for (hook_idx, hook) in matcher.hooks.iter().enumerate() {
+                    let mut parts = vec![];
+                    if !matcher.matcher.is_empty() {
+                        parts.push(format!("matcher={}", matcher.matcher));
+                    }
+                    if !hook.command.is_empty() {
+                        parts.push(format!("command=\"{}\"", hook.command));
+                    }
+                    if !hook.hook_type.is_empty() && hook.hook_type != "command" {
+                        parts.push(format!("type={}", hook.hook_type));
+                    }
                     hooks_list.push((
-                        format!("{}:{}", matcher.matcher, hook.command),
+                        parts.join(" "),
                         "user".to_string(),
                         event.clone(),
                         matcher_idx,
@@ -552,8 +647,18 @@ fn handle_hooks_remove(interactive: bool) -> Result<()> {
         for (event, matchers) in &hooks.events {
             for (matcher_idx, matcher) in matchers.iter().enumerate() {
                 for (hook_idx, hook) in matcher.hooks.iter().enumerate() {
+                    let mut parts = vec![];
+                    if !matcher.matcher.is_empty() {
+                        parts.push(format!("matcher={}", matcher.matcher));
+                    }
+                    if !hook.command.is_empty() {
+                        parts.push(format!("command=\"{}\"", hook.command));
+                    }
+                    if !hook.hook_type.is_empty() && hook.hook_type != "command" {
+                        parts.push(format!("type={}", hook.hook_type));
+                    }
                     hooks_list.push((
-                        format!("{}:{}", matcher.matcher, hook.command),
+                        parts.join(" "),
                         "project".to_string(),
                         event.clone(),
                         matcher_idx,
@@ -570,12 +675,12 @@ fn handle_hooks_remove(interactive: bool) -> Result<()> {
     }
 
     // Display hooks for selection
-    println!("Select hooks to remove:");
+    println!("Select hooks to delete:");
     for (i, (hook_display, scope, event, _, _)) in hooks_list.iter().enumerate() {
         println!("{}. [{}] {}: {}", i + 1, scope, event, hook_display);
     }
 
-    println!("\nEnter hook numbers to remove (comma-separated, or 'all' for all hooks):");
+    println!("\nEnter hook numbers to delete (comma-separated, or 'all' for all hooks):");
     print!("> ");
     io::stdout().flush()?;
 
@@ -588,7 +693,7 @@ fn handle_hooks_remove(interactive: bool) -> Result<()> {
         return Ok(());
     }
 
-    let indices_to_remove: Vec<usize> = if input == "all" {
+    let indices_to_delete: Vec<usize> = if input == "all" {
         (0..hooks_list.len()).collect()
     } else {
         input
@@ -599,7 +704,7 @@ fn handle_hooks_remove(interactive: bool) -> Result<()> {
             .collect()
     };
 
-    if indices_to_remove.is_empty() {
+    if indices_to_delete.is_empty() {
         println!("No valid hooks selected");
         return Ok(());
     }
@@ -608,7 +713,7 @@ fn handle_hooks_remove(interactive: bool) -> Result<()> {
     let mut user_removals = Vec::new();
     let mut project_removals = Vec::new();
 
-    for &idx in &indices_to_remove {
+    for &idx in &indices_to_delete {
         let (_, scope, event, matcher_idx, hook_idx) = &hooks_list[idx];
         match scope.as_str() {
             "user" => user_removals.push((event.clone(), *matcher_idx, *hook_idx)),
@@ -663,7 +768,7 @@ fn handle_hooks_remove(interactive: bool) -> Result<()> {
         save_settings(&project_settings_path, &project_settings)?;
     }
 
-    println!("Removed {} hooks", indices_to_remove.len());
+    println!("Deleted {} hooks", indices_to_delete.len());
 
     Ok(())
 }

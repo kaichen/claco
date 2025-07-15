@@ -45,9 +45,9 @@ pub enum Commands {
 pub enum HooksAction {
     /// List all hooks
     List {
-        /// Scope to list hooks from (user or project)
-        #[arg(long, default_value = "project")]
-        scope: String,
+        /// Scope to list hooks from (user or project, defaults to showing both)
+        #[arg(long)]
+        scope: Option<String>,
     },
     /// Add a new hook
     Add {
@@ -57,16 +57,16 @@ pub enum HooksAction {
         /// Event type to hook into
         #[arg(long)]
         event: String,
-        /// Matcher pattern for the hook
-        #[arg(long)]
+        /// Matcher pattern for the hook (optional, defaults to empty string)
+        #[arg(long, default_value = "")]
         matcher: String,
         /// Command to execute when hook is triggered
         #[arg(long)]
         command: String,
     },
-    /// Remove hooks interactively
-    Remove {
-        /// Interactive mode to select and remove hooks
+    /// Delete hooks interactively
+    Delete {
+        /// Interactive mode to select and delete hooks
         #[arg(long, default_value = "true")]
         interactive: bool,
     },
