@@ -44,9 +44,9 @@ pub enum CommandsSubcommand {
         #[arg(long, value_enum)]
         scope: Option<Scope>,
     },
-    /// Import slash command from markdown file from GitHub
+    /// Import slash command from GitHub markdown file
     Import {
-        /// URL to the markdown file
+        /// GitHub URL to the markdown file (e.g., https://github.com/owner/repo/blob/main/path/to/file.md)
         url: String,
         /// Scope: user or project (defaults to project)
         #[arg(long, value_enum, default_value = "project")]

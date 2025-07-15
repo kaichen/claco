@@ -182,6 +182,7 @@ name = "claco"
 version = "0.2.5"
 dependencies = [
  "anyhow",
+ "base64",
  "chrono",
  "clap",
  "directories",
