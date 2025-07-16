@@ -31,9 +31,45 @@ pub enum Commands {
     Projects,
     /// List all active Claude sessions
     Live,
+    /// Manage hooks
+    Hooks {
+        #[command(subcommand)]
+        action: HooksAction,
+    },
     /// Manage slash commands
     #[command(subcommand)]
     Commands(CommandsSubcommand),
+}
+
+#[derive(Subcommand)]
+pub enum HooksAction {
+    /// List all hooks
+    List {
+        /// Scope to list hooks from (user or project, defaults to showing both)
+        #[arg(long)]
+        scope: Option<String>,
+    },
+    /// Add a new hook
+    Add {
+        /// Scope to add hook to (user or project)
+        #[arg(long, default_value = "project")]
+        scope: String,
+        /// Event type to hook into
+        #[arg(long)]
+        event: String,
+        /// Matcher pattern for the hook (optional, defaults to empty string)
+        #[arg(long, default_value = "")]
+        matcher: String,
+        /// Command to execute when hook is triggered
+        #[arg(long)]
+        command: String,
+    },
+    /// Delete hooks interactively
+    Delete {
+        /// Interactive mode to select and delete hooks
+        #[arg(long, default_value = "true")]
+        interactive: bool,
+    },
 }
 
 #[derive(Subcommand)]
