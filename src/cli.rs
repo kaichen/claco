@@ -99,6 +99,12 @@ pub enum CommandsSubcommand {
         /// The prompt to generate a command from
         prompt: String,
     },
+    /// Delete commands interactively
+    Delete {
+        /// Interactive mode to select and delete commands
+        #[arg(short, long, default_value = "true")]
+        interactive: bool,
+    },
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
