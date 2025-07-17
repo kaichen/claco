@@ -1,97 +1,58 @@
-# claco - Claude Code CLI Inspector
+# claco - Claude Code Helper
 
-![cover](assets/cover-show-me-your-talk.png)
+![cover](assets/cli-showcase.png)
 
-`claco` (Claude Code Inspector) is a CLI tool for inspecting Claude Code sessions and project data stored in the `~/.claude` directory.
+`claco` (Claude Code Helper) is a CLI tool for boosting Claude Code productive.
 
-If you're a Claude Code user, you can use this claco tool to quickly print out all the commands you've issued in the current project with just one click.
+## Features and Usage
 
-## Installation
+- **hooks**: Manage hooks configuration
+- **commands**: Manage slash commands configurations
+- **history**: Lists all user input messages for the current project
+- **projects**: Lists all projects with their session IDs
+- **session**: Shows session info including first user message and timestamp
+- **live**: Shows active claude code IDE sessions with PID and workspace info
 
-### Quick install (Linux/macOS)
+Manage Hooks
+
 ```bash
-# Using curl
-curl -fsSL https://raw.githubusercontent.com/kaichen/claco/main/install.sh | bash
-
-# Using wget
-wget -qO- https://raw.githubusercontent.com/kaichen/claco/main/install.sh | bash
-
-# Or download and run manually
-curl -O https://raw.githubusercontent.com/kaichen/claco/main/install.sh
-chmod +x install.sh
-./install.sh
-
-# Install to custom directory
-INSTALL_DIR=~/.local/bin ./install.sh
+# List all claude code hooks
+claco hooks list
+# Add stop sound notification
+claco hooks add --scope=user --event=Stop --command="afplay /System/Library/Sounds/Glass.aiff
 ```
 
-### From source
+Manage Slash Commands
+
 ```bash
-cargo install --path .
+# List all claude code slash commands
+claco commands list
+# Import command from github repo
+claco commands import https://github.com/amantus-ai/vibetunnel/blob/main/.claude/commands/review-pr.md
+# Generate command via claude code cli
+claco commands generate "Checkout yesterday's pull request and generate report"
 ```
 
-### From crates.io or Github
-```bash
-cargo install claco
-cargo install --git https://github.com/kaichen/claco
-```
+List user messages in current project
 
-## Usage
-
-### List user messages in current project
 ```bash
 # Show all user messages in the current directory's Claude project
 claco history
 # Or use the alias
-claco showmeyourtalk
-
+claco showmeyourtalk > dev-prompt.log
 # Show messages from a specific session
-claco history --session 48fb8f8e-48e9-4eb8-b035-4b72deb386cf
+claco history --session 48fb8f8e-48e9-4eb8-b035-4b72deb386cf >> dev-prompt.log
 ```
 
-### Show session information
-```bash
-# Display info about the most recent session
-claco session
+## Installation
 
-# Display info about a specific session by ID
-claco session 48fb8f8e-48e9-4eb8-b035-4b72deb386cf
-```
+On Linux/macOS:
 
-### List all projects
-```bash
-# List all Claude projects and their sessions
-claco projects
-```
+- Install from script `curl -fsSL https://raw.githubusercontent.com/kaichen/claco/main/install.sh | bash`
+- Install from crates.io `cargo install claco`
+- Install from Github(Unstable) `cargo install --git https://github.com/kaichen/claco`
 
-### Show active sessions
-```bash
-# List all currently active Claude sessions
-claco live
-```
-
-## Features
-
-- **history**: Lists all user input messages for the current project
-- **session**: Displays session info including first user message and timestamp
-- **projects**: Lists all projects with their session IDs
-- **live**: Shows active Claude sessions with PID and workspace info
-
-## Development
-
-```bash
-# Build
-cargo build
-
-# Run tests
-cargo test
-
-# Check code
-cargo clippy
-
-# Format code
-cargo fmt
-```
+*NOTICE* cargo is package manager from rust toolchain.
 
 ## License
 
