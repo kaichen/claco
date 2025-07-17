@@ -8,18 +8,31 @@ If you're a Claude Code user, you can use this claco tool to quickly print out a
 
 ## Installation
 
+### Quick install (Linux/macOS)
+```bash
+# Using curl
+curl -fsSL https://raw.githubusercontent.com/kaichen/claco/main/install.sh | bash
+
+# Using wget
+wget -qO- https://raw.githubusercontent.com/kaichen/claco/main/install.sh | bash
+
+# Or download and run manually
+curl -O https://raw.githubusercontent.com/kaichen/claco/main/install.sh
+chmod +x install.sh
+./install.sh
+
+# Install to custom directory
+INSTALL_DIR=~/.local/bin ./install.sh
+```
+
 ### From source
 ```bash
 cargo install --path .
 ```
 
-### From crates.io (when published)
+### From crates.io or Github
 ```bash
 cargo install claco
-```
-
-### From GitHub
-```bash
 cargo install --git https://github.com/kaichen/claco
 ```
 
@@ -79,3 +92,7 @@ cargo clippy
 # Format code
 cargo fmt
 ```
+
+## License
+
+MIT.
