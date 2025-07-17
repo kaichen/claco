@@ -4,8 +4,9 @@ on:
     branches:
       - main
     paths:
-      - "codex-rs/**"
       - ".github/**"
+      - "src/**"
+      - "Cargo.*"
   push:
     branches:
       - main
