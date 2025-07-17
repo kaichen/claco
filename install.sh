@@ -72,44 +72,22 @@ get_latest_version() {
     fi
 }
 
-# Download binary from GitHub releases
-download_binary() {
-    local version="$1"
-    local platform="$2"
-    local temp_dir
-    
-    temp_dir=$(mktemp -d)
-    trap "rm -rf $temp_dir" EXIT
-    
-    # Construct download URL
-    local download_url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${version}/${BINARY_NAME}-${platform}.tar.gz"
-    local archive_path="${temp_dir}/${BINARY_NAME}.tar.gz"
-    
-    info "Downloading ${BINARY_NAME} ${version} for ${platform}..."
-    
-    if command -v curl &> /dev/null; then
-        curl -L -o "$archive_path" "$download_url" || error "Failed to download binary"
-    elif command -v wget &> /dev/null; then
-        wget -O "$archive_path" "$download_url" || error "Failed to download binary"
-    fi
-    
-    # Extract binary
-    info "Extracting binary..."
-    tar -xzf "$archive_path" -C "$temp_dir" || error "Failed to extract archive"
-    
-    # Find the binary
-    local binary_path="${temp_dir}/${BINARY_NAME}"
-    if [[ ! -f "$binary_path" ]]; then
-        error "Binary not found in archive"
-    fi
-    
-    echo "$binary_path"
-}
 
 # Install binary to target directory
 install_binary() {
     local binary_path="$1"
     local target_path="${INSTALL_DIR}/${BINARY_NAME}"
+    
+    # Create directory if it doesn't exist
+    if [[ ! -d "$INSTALL_DIR" ]]; then
+        if [[ -w "$(dirname "$INSTALL_DIR")" ]]; then
+            info "Creating directory ${INSTALL_DIR}..."
+            mkdir -p "$INSTALL_DIR"
+        else
+            warn "Root access required to create ${INSTALL_DIR}"
+            sudo mkdir -p "$INSTALL_DIR"
+        fi
+    fi
     
     # Check if we need sudo
     if [[ -w "$INSTALL_DIR" ]]; then
@@ -154,17 +132,73 @@ main() {
     fi
     info "Latest version: ${version}"
     
-    # Download binary
-    local binary_path
-    binary_path=$(download_binary "$version" "$platform")
+    # Download and install binary
+    local temp_dir
+    temp_dir=$(mktemp -d)
+    trap "rm -rf $temp_dir" EXIT
+    
+    # Map platform to release asset naming
+    local release_platform
+    case "$platform" in
+        darwin-x86_64)
+            release_platform="x86_64-apple-darwin"
+            ;;
+        darwin-aarch64)
+            release_platform="aarch64-apple-darwin"
+            ;;
+        linux-x86_64)
+            release_platform="x86_64-unknown-linux-musl"
+            ;;
+        linux-aarch64)
+            release_platform="aarch64-unknown-linux-musl"
+            ;;
+        *)
+            error "Unsupported platform: $platform"
+            ;;
+    esac
+    
+    # Construct download URL
+    local download_url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${version}/${BINARY_NAME}-${version}-${release_platform}.tar.gz"
+    local archive_path="${temp_dir}/${BINARY_NAME}.tar.gz"
+    
+    info "Downloading ${BINARY_NAME} ${version} for ${platform}..."
+    
+    if command -v curl &> /dev/null; then
+        curl -L -o "$archive_path" "$download_url" || error "Failed to download binary"
+    elif command -v wget &> /dev/null; then
+        wget -O "$archive_path" "$download_url" || error "Failed to download binary"
+    fi
+    
+    # Extract binary
+    info "Extracting binary..."
+    tar -xzf "$archive_path" -C "$temp_dir" || error "Failed to extract archive"
+    
+    # Find the binary
+    local binary_path="${temp_dir}/${BINARY_NAME}"
+    if [[ ! -f "$binary_path" ]]; then
+        binary_path=$(find "$temp_dir" -name "$BINARY_NAME" -type f | head -1)
+        if [[ -z "$binary_path" ]]; then
+            error "Binary not found in archive"
+        fi
+    fi
     
     # Install binary
     install_binary "$binary_path"
     
     # Verify installation
-    if command -v "$BINARY_NAME" &> /dev/null; then
+    local installed_path="${INSTALL_DIR}/${BINARY_NAME}"
+    if [[ -f "$installed_path" && -x "$installed_path" ]]; then
         info "${BINARY_NAME} has been successfully installed!"
-        info "Version: $($BINARY_NAME --version 2>/dev/null || echo 'version info not available')"
+        info "Location: ${installed_path}"
+        info "Version: $("$installed_path" --version 2>/dev/null || echo 'version info not available')"
+        
+        # Check if install dir is in PATH
+        if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
+            warn "Note: ${INSTALL_DIR} is not in your PATH"
+            info "To use ${BINARY_NAME}, either:"
+            info "  1. Add to PATH: export PATH=\"${INSTALL_DIR}:\$PATH\""
+            info "  2. Use full path: ${installed_path}"
+        fi
     else
         error "Installation verification failed"
     fi
