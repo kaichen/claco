@@ -62,7 +62,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        build: [linux, macos]
+        build: [linux, macos, macos-aarch64]
         include:
         - build: linux
           os: ubuntu-22.04
@@ -86,7 +86,7 @@ jobs:
       if: matrix.os == 'ubuntu-22.04'
       run: |
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends xz-utils liblz4-tool libssl-dev
+        sudo apt-get install -y --no-install-recommends xz-utils liblz4-tool musl-tools
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
