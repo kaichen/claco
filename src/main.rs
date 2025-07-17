@@ -1092,7 +1092,12 @@ fn handle_commands_delete(interactive: bool) -> Result<()> {
     let project_scope = Scope::Project;
     let project_commands_dir = get_commands_dir(&project_scope)?;
     if project_commands_dir.exists() {
-        collect_commands_recursive(&project_commands_dir, "", &project_scope, &mut commands_list)?;
+        collect_commands_recursive(
+            &project_commands_dir,
+            "",
+            &project_scope,
+            &mut commands_list,
+        )?;
     }
 
     if commands_list.is_empty() {
@@ -1145,7 +1150,7 @@ fn handle_commands_delete(interactive: bool) -> Result<()> {
         let (_, _, file_path) = &commands_list[idx];
         if fs::remove_file(file_path).is_ok() {
             deleted_count += 1;
-            
+
             // Clean up empty directories
             if let Some(parent) = file_path.parent() {
                 // Try to remove parent directory if it's empty
