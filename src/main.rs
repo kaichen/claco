@@ -101,7 +101,7 @@ fn handle_history(session_id: Option<String>) -> Result<()> {
     let project_path = match matched_project_path {
         Some(path) => path,
         None => {
-            println!("No Claude project found for current directory: {}", cwd_str);
+            println!("No Claude project found for current directory: {cwd_str}");
             return Ok(());
         }
     };
@@ -232,7 +232,7 @@ fn handle_session(session_id: Option<String>) -> Result<()> {
 
         match most_recent_session {
             Some(id) => {
-                println!("Using most recent session: {}", id);
+                println!("Using most recent session: {id}");
                 id
             }
             None => {
@@ -251,11 +251,11 @@ fn handle_session(session_id: Option<String>) -> Result<()> {
             continue;
         }
 
-        let session_file = project_path.join(format!("{}.jsonl", target_session_id));
+        let session_file = project_path.join(format!("{target_session_id}.jsonl"));
 
         if session_file.exists() {
             // Found the session
-            println!("Session ID: {}", target_session_id);
+            println!("Session ID: {target_session_id}");
 
             // Read first user message and get timestamp
             let file = fs::File::open(&session_file)?;
@@ -290,7 +290,7 @@ fn handle_session(session_id: Option<String>) -> Result<()> {
             }
 
             if let Some(cwd) = project_cwd {
-                println!("Project: {}", cwd);
+                println!("Project: {cwd}");
             }
 
             if let Some(timestamp) = first_timestamp {
@@ -298,14 +298,14 @@ fn handle_session(session_id: Option<String>) -> Result<()> {
             }
 
             if let Some(message) = first_user_message {
-                println!("First user message: {}", message);
+                println!("First user message: {message}");
             }
 
             return Ok(());
         }
     }
 
-    println!("Session not found: {}", target_session_id);
+    println!("Session not found: {target_session_id}");
     Ok(())
 }
 
@@ -360,8 +360,8 @@ fn handle_projects() -> Result<()> {
             desanitize_project_path(&project_name)
         };
 
-        println!("Project: {}", project_path);
-        println!("  Sessions: {:?}", sessions);
+        println!("Project: {project_path}");
+        println!("  Sessions: {sessions:?}");
         println!();
     }
 
@@ -417,10 +417,7 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
                 "user" => user_settings_path(),
                 "project" => project_settings_path(),
                 _ => {
-                    eprintln!(
-                        "Error: Invalid scope '{}'. Use 'user' or 'project'",
-                        specific_scope
-                    );
+                    eprintln!("Error: Invalid scope '{specific_scope}'. Use 'user' or 'project'");
                     return Ok(());
                 }
             };
@@ -428,7 +425,7 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
             let settings = load_settings(&settings_path)?;
 
             if let Some(hooks) = &settings.hooks {
-                println!("Hooks in {} scope:", specific_scope);
+                println!("Hooks in {specific_scope} scope:");
                 println!("Settings file: {}", settings_path.display());
                 println!();
 
@@ -438,7 +435,7 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
                 }
 
                 for (event, matchers) in &hooks.events {
-                    println!("Event: {}", event);
+                    println!("Event: {event}");
                     for matcher in matchers {
                         for hook in &matcher.hooks {
                             let mut parts = vec![];
@@ -457,7 +454,7 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
                     println!();
                 }
             } else {
-                println!("No hooks found in {} scope", specific_scope);
+                println!("No hooks found in {specific_scope} scope");
             }
         }
         None => {
@@ -470,7 +467,7 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
                 if !hooks.events.is_empty() {
                     println!("User hooks: {}", user_settings_path.display());
                     for (event, matchers) in &hooks.events {
-                        println!("  Event: {}", event);
+                        println!("  Event: {event}");
                         for matcher in matchers {
                             for hook in &matcher.hooks {
                                 let mut parts = vec![];
@@ -499,7 +496,7 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
                 if !hooks.events.is_empty() {
                     println!("Project hooks: {}", project_settings_path.display());
                     for (event, matchers) in &hooks.events {
-                        println!("  Event: {}", event);
+                        println!("  Event: {event}");
                         for matcher in matchers {
                             for hook in &matcher.hooks {
                                 let mut parts = vec![];
@@ -539,7 +536,7 @@ fn handle_hooks_add(scope: String, event: String, matcher: String, command: Stri
         "user" => user_settings_path(),
         "project" => project_settings_path(),
         _ => {
-            eprintln!("Error: Invalid scope '{}'. Use 'user' or 'project'", scope);
+            eprintln!("Error: Invalid scope '{scope}'. Use 'user' or 'project'");
             return Ok(());
         }
     };
@@ -554,10 +551,7 @@ fn handle_hooks_add(scope: String, event: String, matcher: String, command: Stri
         "PreCompact",
     ];
     if !valid_events.contains(&event.as_str()) {
-        eprintln!(
-            "Error: Invalid event '{}'. Valid events are: {:?}",
-            event, valid_events
-        );
+        eprintln!("Error: Invalid event '{event}'. Valid events are: {valid_events:?}");
         return Ok(());
     }
 
@@ -597,10 +591,10 @@ fn handle_hooks_add(scope: String, event: String, matcher: String, command: Stri
 
     let mut parts = vec![];
     if !matcher.is_empty() {
-        parts.push(format!("matcher={}", matcher));
+        parts.push(format!("matcher={matcher}"));
     }
     if !command.is_empty() {
-        parts.push(format!("command=\"{}\"", command));
+        parts.push(format!("command=\"{command}\""));
     }
     println!("Added hook: {} -> {}", event, parts.join(" "));
     println!("Settings file: {}", settings_path.display());
@@ -881,12 +875,12 @@ fn list_commands_recursive(dir: &std::path::Path, namespace: &str, _scope: &Scop
     // Print commands in current directory
     for command in commands {
         let full_name = if namespace.is_empty() {
-            format!("/{}", command)
+            format!("/{command}")
         } else {
-            format!("/{}:{}", namespace, command)
+            format!("/{namespace}:{command}")
         };
 
-        println!("  {}", full_name);
+        println!("  {full_name}");
     }
 
     // Recursively process subdirectories
@@ -895,7 +889,7 @@ fn list_commands_recursive(dir: &std::path::Path, namespace: &str, _scope: &Scop
         let new_namespace = if namespace.is_empty() {
             subdir.clone()
         } else {
-            format!("{}:{}", namespace, subdir)
+            format!("{namespace}:{subdir}")
         };
 
         list_commands_recursive(&subdir_path, &new_namespace, _scope)?;
@@ -963,10 +957,7 @@ async fn handle_commands_import(url: String, scope: Scope) -> Result<()> {
     let output = Command::new("gh")
         .args([
             "api",
-            &format!(
-                "/repos/{}/{}/contents/{}?ref={}",
-                owner, repo, file_path, branch
-            ),
+            &format!("/repos/{owner}/{repo}/contents/{file_path}?ref={branch}"),
             "--jq",
             ".content",
             "-H",
@@ -1029,7 +1020,7 @@ fn handle_commands_clean(scope: Scope) -> Result<()> {
     let command_count = count_commands_recursive(&commands_dir)?;
 
     if command_count == 0 {
-        println!("No commands found in {} scope", scope_label);
+        println!("No commands found in {scope_label} scope");
         return Ok(());
     }
 
@@ -1047,7 +1038,7 @@ fn handle_commands_clean(scope: Scope) -> Result<()> {
 
     if input.trim().to_lowercase() == "y" || input.trim().to_lowercase() == "yes" {
         fs::remove_dir_all(&commands_dir)?;
-        println!("Removed all commands from {} scope", scope_label);
+        println!("Removed all commands from {scope_label} scope");
     } else {
         println!("Operation cancelled");
     }
@@ -1159,7 +1150,7 @@ fn handle_commands_delete(interactive: bool) -> Result<()> {
         }
     }
 
-    println!("Deleted {} command(s)", deleted_count);
+    println!("Deleted {deleted_count} command(s)");
 
     Ok(())
 }
@@ -1179,7 +1170,7 @@ fn collect_commands_recursive(
             let new_namespace = if namespace.is_empty() {
                 subdir_name
             } else {
-                format!("{}:{}", namespace, subdir_name)
+                format!("{namespace}:{subdir_name}")
             };
             collect_commands_recursive(&path, &new_namespace, scope, commands_list)?;
         } else if path.extension().and_then(|s| s.to_str()) == Some("md") {
@@ -1241,7 +1232,7 @@ Use Write tool to write down the result to markdown file.
 
 Generate concise, practical commands that follow these conventions."#;
 
-    let claude_prompt = format!("Generate a slash command markdown in this project for: {}\n\nProvide the complete markdown content including filename suggestion.", prompt);
+    let claude_prompt = format!("Generate a slash command markdown in this project for: {prompt}\n\nProvide the complete markdown content including filename suggestion.");
 
     // Set up spinner
     let running = Arc::new(AtomicBool::new(true));
