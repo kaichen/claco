@@ -417,7 +417,10 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
                 "user" => user_settings_path(),
                 "project" => project_settings_path(),
                 _ => {
-                    eprintln!("Error: Invalid scope '{}'. Use 'user' or 'project'", specific_scope);
+                    eprintln!(
+                        "Error: Invalid scope '{}'. Use 'user' or 'project'",
+                        specific_scope
+                    );
                     return Ok(());
                 }
             };
@@ -462,7 +465,7 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
             // List user hooks
             let user_settings_path = user_settings_path();
             let user_settings = load_settings(&user_settings_path)?;
-            
+
             if let Some(hooks) = &user_settings.hooks {
                 if !hooks.events.is_empty() {
                     println!("User hooks: {}", user_settings_path.display());
@@ -487,11 +490,11 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
                     println!();
                 }
             }
-            
+
             // List project hooks
             let project_settings_path = project_settings_path();
             let project_settings = load_settings(&project_settings_path)?;
-            
+
             if let Some(hooks) = &project_settings.hooks {
                 if !hooks.events.is_empty() {
                     println!("Project hooks: {}", project_settings_path.display());
@@ -514,10 +517,16 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
                         }
                     }
                 } else {
-                    println!("No project hooks found at: {}", project_settings_path.display());
+                    println!(
+                        "No project hooks found at: {}",
+                        project_settings_path.display()
+                    );
                 }
             } else {
-                println!("No project hooks found at: {}", project_settings_path.display());
+                println!(
+                    "No project hooks found at: {}",
+                    project_settings_path.display()
+                );
             }
         }
     }
@@ -779,6 +788,7 @@ async fn handle_commands(cmd: CommandsSubcommand) -> Result<()> {
         CommandsSubcommand::Import { url, scope } => handle_commands_import(url, scope).await?,
         CommandsSubcommand::Clean { scope } => handle_commands_clean(scope)?,
         CommandsSubcommand::Generate { prompt } => handle_commands_generate(prompt)?,
+        CommandsSubcommand::Delete { interactive } => handle_commands_delete(interactive)?,
     }
     Ok(())
 }
@@ -820,9 +830,6 @@ fn handle_commands_list(scope: Option<Scope>) -> Result<()> {
         }
         None => {
             // Show commands from both user and project scopes
-            println!("Slash commands:");
-            println!();
-
             // List user commands
             let user_scope = Scope::User;
             let user_commands_dir = get_commands_dir(&user_scope)?;
@@ -1063,6 +1070,125 @@ fn count_commands_recursive(dir: &std::path::Path) -> Result<usize> {
     }
 
     Ok(count)
+}
+
+fn handle_commands_delete(interactive: bool) -> Result<()> {
+    if !interactive {
+        eprintln!("Error: Non-interactive mode is not supported yet");
+        return Ok(());
+    }
+
+    // Collect all commands with their metadata
+    let mut commands_list = Vec::new();
+
+    // Add user commands
+    let user_scope = Scope::User;
+    let user_commands_dir = get_commands_dir(&user_scope)?;
+    if user_commands_dir.exists() {
+        collect_commands_recursive(&user_commands_dir, "", &user_scope, &mut commands_list)?;
+    }
+
+    // Add project commands
+    let project_scope = Scope::Project;
+    let project_commands_dir = get_commands_dir(&project_scope)?;
+    if project_commands_dir.exists() {
+        collect_commands_recursive(&project_commands_dir, "", &project_scope, &mut commands_list)?;
+    }
+
+    if commands_list.is_empty() {
+        println!("No commands found");
+        return Ok(());
+    }
+
+    // Display commands for selection
+    println!("Select commands to delete:");
+    for (i, (command_name, scope, _file_path)) in commands_list.iter().enumerate() {
+        let scope_label = match scope {
+            Scope::User => "user",
+            Scope::Project => "project",
+        };
+        println!("{}. [{}] {}", i + 1, scope_label, command_name);
+    }
+
+    println!("\nEnter command numbers to delete (comma-separated, or 'all' for all commands):");
+    print!("> ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let input = input.trim();
+
+    if input.is_empty() {
+        println!("No commands selected");
+        return Ok(());
+    }
+
+    let indices_to_delete: Vec<usize> = if input == "all" {
+        (0..commands_list.len()).collect()
+    } else {
+        input
+            .split(',')
+            .filter_map(|s| s.trim().parse::<usize>().ok())
+            .filter(|&i| i > 0 && i <= commands_list.len())
+            .map(|i| i - 1)
+            .collect()
+    };
+
+    if indices_to_delete.is_empty() {
+        println!("No valid commands selected");
+        return Ok(());
+    }
+
+    // Delete the selected commands
+    let mut deleted_count = 0;
+    for &idx in &indices_to_delete {
+        let (_, _, file_path) = &commands_list[idx];
+        if fs::remove_file(file_path).is_ok() {
+            deleted_count += 1;
+            
+            // Clean up empty directories
+            if let Some(parent) = file_path.parent() {
+                // Try to remove parent directory if it's empty
+                let _ = fs::remove_dir(parent);
+            }
+        }
+    }
+
+    println!("Deleted {} command(s)", deleted_count);
+
+    Ok(())
+}
+
+fn collect_commands_recursive(
+    dir: &std::path::Path,
+    namespace: &str,
+    scope: &Scope,
+    commands_list: &mut Vec<(String, Scope, std::path::PathBuf)>,
+) -> Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.is_dir() {
+            let subdir_name = entry.file_name().to_string_lossy().to_string();
+            let new_namespace = if namespace.is_empty() {
+                subdir_name
+            } else {
+                format!("{}:{}", namespace, subdir_name)
+            };
+            collect_commands_recursive(&path, &new_namespace, scope, commands_list)?;
+        } else if path.extension().and_then(|s| s.to_str()) == Some("md") {
+            if let Some(name) = path.file_stem() {
+                let command_name = if namespace.is_empty() {
+                    format!("/{}", name.to_string_lossy())
+                } else {
+                    format!("/{}:{}", namespace, name.to_string_lossy())
+                };
+                commands_list.push((command_name, scope.clone(), path.clone()));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn handle_commands_generate(prompt: String) -> Result<()> {
