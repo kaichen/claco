@@ -39,6 +39,9 @@ pub enum Commands {
     /// Manage slash commands
     #[command(subcommand)]
     Commands(CommandsSubcommand),
+    /// Manage custom agents
+    #[command(subcommand)]
+    Agents(AgentsSubcommand),
 }
 
 #[derive(Subcommand)]
@@ -111,4 +114,39 @@ pub enum CommandsSubcommand {
 pub enum Scope {
     User,
     Project,
+}
+
+#[derive(Subcommand)]
+pub enum AgentsSubcommand {
+    /// List all agents
+    List {
+        /// Scope: user or project (defaults to showing both)
+        #[arg(long, value_enum)]
+        scope: Option<Scope>,
+    },
+    /// Import agent from file or URL
+    Import {
+        /// Path to agent file or GitHub URL
+        source: String,
+        /// Scope: user or project (defaults to project)
+        #[arg(long, value_enum, default_value = "project")]
+        scope: Scope,
+    },
+    /// Delete agents interactively
+    Delete {
+        /// Interactive mode to select and delete agents
+        #[arg(short, long, default_value = "true")]
+        interactive: bool,
+    },
+    /// Remove all agents (with confirmation)
+    Clean {
+        /// Scope: user or project (defaults to project)
+        #[arg(long, value_enum, default_value = "project")]
+        scope: Scope,
+    },
+    /// Generate agent from prompt via Claude Code
+    Generate {
+        /// The prompt to generate an agent from
+        prompt: String,
+    },
 }
