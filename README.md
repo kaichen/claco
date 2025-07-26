@@ -4,6 +4,17 @@
 
 `claco` (Claude Code Helper) is a CLI tool for boosting Claude Code productive.
 
+## Installation
+
+On Linux/macOS:
+
+- Install via Homebrew(Mac ONLY): `brew install kaichen/tap/claco`
+- Install via script `curl -fsSL https://raw.githubusercontent.com/kaichen/claco/main/install.sh | bash`
+- Install via crates.io `cargo install claco`
+- Install via Github(Unstable) `cargo install --git https://github.com/kaichen/claco`
+
+*NOTICE* cargo is package manager from rust toolchain.
+
 ## Features and Usage
 
 - **hooks**: Manage hooks configuration
@@ -43,16 +54,6 @@ claco showmeyourtalk > dev-prompt.log
 # Show messages from a specific session
 claco history --session 48fb8f8e-48e9-4eb8-b035-4b72deb386cf >> dev-prompt.log
 ```
-
-## Installation
-
-On Linux/macOS:
-
-- Install from script `curl -fsSL https://raw.githubusercontent.com/kaichen/claco/main/install.sh | bash`
-- Install from crates.io `cargo install claco`
-- Install from Github(Unstable) `cargo install --git https://github.com/kaichen/claco`
-
-*NOTICE* cargo is package manager from rust toolchain.
 
 ## License
 
