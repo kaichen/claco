@@ -6,7 +6,6 @@ set -euo pipefail
 REPO_OWNER="kaichen"
 REPO_NAME="claco"
 BINARY_NAME="claco"
-INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -26,6 +25,48 @@ info() {
 
 warn() {
     echo -e "${YELLOW}$1${NC}"
+}
+
+# Detect install directory
+detect_install_dir() {
+    # If INSTALL_DIR is already set, use it
+    if [[ -n "${INSTALL_DIR:-}" ]]; then
+        echo "$INSTALL_DIR"
+        return
+    fi
+    
+    # Check for user-writable directories in PATH
+    local path_dirs=()
+    IFS=':' read -ra path_dirs <<< "$PATH"
+    
+    # Preferred user directories
+    local user_dirs=("$HOME/.local/bin" "$HOME/bin")
+    
+    # Check if preferred directories exist and are in PATH
+    for dir in "${user_dirs[@]}"; do
+        if [[ -d "$dir" ]] && [[ -w "$dir" ]]; then
+            # Check if this directory is in PATH
+            for path_dir in "${path_dirs[@]}"; do
+                if [[ "$path_dir" == "$dir" ]]; then
+                    info "Found user-writable directory in PATH: $dir"
+                    echo "$dir"
+                    return
+                fi
+            done
+        fi
+    done
+    
+    # Check if preferred directories exist but not in PATH
+    for dir in "${user_dirs[@]}"; do
+        if [[ -d "$dir" ]] && [[ -w "$dir" ]]; then
+            warn "Found user-writable directory not in PATH: $dir"
+            echo "$dir"
+            return
+        fi
+    done
+    
+    # Default to /usr/local/bin
+    echo "/usr/local/bin"
 }
 
 # Detect OS and architecture
@@ -76,27 +117,28 @@ get_latest_version() {
 # Install binary to target directory
 install_binary() {
     local binary_path="$1"
-    local target_path="${INSTALL_DIR}/${BINARY_NAME}"
+    local install_dir="$2"
+    local target_path="${install_dir}/${BINARY_NAME}"
     
     # Create directory if it doesn't exist
-    if [[ ! -d "$INSTALL_DIR" ]]; then
-        if [[ -w "$(dirname "$INSTALL_DIR")" ]]; then
-            info "Creating directory ${INSTALL_DIR}..."
-            mkdir -p "$INSTALL_DIR"
+    if [[ ! -d "$install_dir" ]]; then
+        if [[ -w "$(dirname "$install_dir")" ]]; then
+            info "Creating directory ${install_dir}..."
+            mkdir -p "$install_dir"
         else
-            warn "Root access required to create ${INSTALL_DIR}"
-            sudo mkdir -p "$INSTALL_DIR"
+            warn "Root access required to create ${install_dir}"
+            sudo mkdir -p "$install_dir"
         fi
     fi
     
     # Check if we need sudo
-    if [[ -w "$INSTALL_DIR" ]]; then
-        info "Installing ${BINARY_NAME} to ${INSTALL_DIR}..."
+    if [[ -w "$install_dir" ]]; then
+        info "Installing ${BINARY_NAME} to ${install_dir}..."
         cp "$binary_path" "$target_path"
         chmod +x "$target_path"
     else
-        warn "Root access required to install to ${INSTALL_DIR}"
-        info "Installing ${BINARY_NAME} to ${INSTALL_DIR}..."
+        warn "Root access required to install to ${install_dir}"
+        info "Installing ${BINARY_NAME} to ${install_dir}..."
         sudo cp "$binary_path" "$target_path"
         sudo chmod +x "$target_path"
     fi
@@ -107,6 +149,11 @@ install_binary() {
 # Main installation flow
 main() {
     info "Installing ${BINARY_NAME}..."
+    
+    # Detect install directory
+    local install_dir
+    install_dir=$(detect_install_dir)
+    info "Install directory: ${install_dir}"
     
     # Check if binary already exists
     if command -v "$BINARY_NAME" &> /dev/null; then
@@ -183,20 +230,20 @@ main() {
     fi
     
     # Install binary
-    install_binary "$binary_path"
+    install_binary "$binary_path" "$install_dir"
     
     # Verify installation
-    local installed_path="${INSTALL_DIR}/${BINARY_NAME}"
+    local installed_path="${install_dir}/${BINARY_NAME}"
     if [[ -f "$installed_path" && -x "$installed_path" ]]; then
         info "${BINARY_NAME} has been successfully installed!"
         info "Location: ${installed_path}"
         info "Version: $("$installed_path" --version 2>/dev/null || echo 'version info not available')"
         
         # Check if install dir is in PATH
-        if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
-            warn "Note: ${INSTALL_DIR} is not in your PATH"
+        if ! echo "$PATH" | grep -q "$install_dir"; then
+            warn "Note: ${install_dir} is not in your PATH"
             info "To use ${BINARY_NAME}, either:"
-            info "  1. Add to PATH: export PATH=\"${INSTALL_DIR}:\$PATH\""
+            info "  1. Add to PATH: export PATH=\"${install_dir}:\$PATH\""
             info "  2. Use full path: ${installed_path}"
         fi
     else
