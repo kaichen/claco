@@ -1,8 +1,8 @@
 use anyhow::Result;
 use chrono::{DateTime, Local};
 use claco::{
-    claude_home, desanitize_project_path, load_settings, project_settings_path,
-    save_settings, user_settings_path, AgentsSubcommand, Cli, Commands, CommandsSubcommand, Hook, HookMatcher,
+    claude_home, desanitize_project_path, load_settings, project_settings_path, save_settings,
+    user_settings_path, AgentsSubcommand, Cli, Commands, CommandsSubcommand, Hook, HookMatcher,
     HooksAction, Scope, SessionEntry,
 };
 use clap::Parser;
@@ -367,7 +367,6 @@ fn handle_projects() -> Result<()> {
 
     Ok(())
 }
-
 
 fn handle_hooks(action: HooksAction) -> Result<()> {
     match action {
@@ -945,11 +944,11 @@ async fn handle_commands_import(url: String, scope: Scope) -> Result<()> {
 
     // The content is base64 encoded, decode it
     let base64_content = String::from_utf8_lossy(&output.stdout);
-    let base64_content = base64_content
-        .trim()
-        .replace("\\n", "")
-        .replace("\n", "")
-        .replace(" ", "");
+    // GitHub returns base64 with newlines, we need to remove all whitespace
+    let base64_content: String = base64_content
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
 
     use base64::Engine;
     let decoded = base64::engine::general_purpose::STANDARD
@@ -1179,7 +1178,7 @@ STRUCTURE:Organize commands in subdirectories.
 - Filename: command-name.md (becomes /command-name)
 - Optional YAML frontmatter with:
   - description: Brief command description
-  - allowed-tools: List of tools like Bash, Read, Edit, etc.
+  - tools: (optional) Comma-separated list of tools like Read, Write, Edit, Bash
 - Main content: Clear prompt instructions
 
 FEATURES:
@@ -1192,7 +1191,7 @@ EXAMPLE:
 ```markdown
 ---
 description: Review code for issues
-allowed-tools: Read, Grep
+tools: Read, Grep
 ---
 
 Review the following code for potential issues:
@@ -1296,11 +1295,7 @@ fn handle_agents_list(scope: Option<Scope>) -> Result<()> {
                 Scope::Project => "project",
             };
 
-            println!(
-                "Custom agents ({}): {}",
-                scope_label,
-                agents_dir.display()
-            );
+            println!("Custom agents ({}): {}", scope_label, agents_dir.display());
             println!();
 
             list_agents_recursive(&agents_dir, "", &specific_scope)?;
@@ -1312,10 +1307,7 @@ fn handle_agents_list(scope: Option<Scope>) -> Result<()> {
             let user_agents_dir = get_agents_dir(&user_scope)?;
 
             if user_agents_dir.exists() {
-                println!(
-                    "Custom agents (user): {}",
-                    user_agents_dir.display()
-                );
+                println!("Custom agents (user): {}", user_agents_dir.display());
                 println!();
                 list_agents_recursive(&user_agents_dir, "", &user_scope)?;
                 println!();
@@ -1326,10 +1318,7 @@ fn handle_agents_list(scope: Option<Scope>) -> Result<()> {
             let project_agents_dir = get_agents_dir(&project_scope)?;
 
             if project_agents_dir.exists() {
-                println!(
-                    "Custom agents (project): {}",
-                    project_agents_dir.display()
-                );
+                println!("Custom agents (project): {}", project_agents_dir.display());
                 println!();
                 list_agents_recursive(&project_agents_dir, "", &project_scope)?;
             } else if !user_agents_dir.exists() {
@@ -1341,20 +1330,14 @@ fn handle_agents_list(scope: Option<Scope>) -> Result<()> {
     Ok(())
 }
 
-fn list_agents_recursive(
-    dir: &std::path::Path,
-    namespace: &str,
-    scope: &Scope,
-) -> Result<()> {
-    let mut entries: Vec<_> = fs::read_dir(dir)?
-        .filter_map(|e| e.ok())
-        .collect();
+fn list_agents_recursive(dir: &std::path::Path, namespace: &str, scope: &Scope) -> Result<()> {
+    let mut entries: Vec<_> = fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
 
     // Sort entries: directories first, then files
     entries.sort_by(|a, b| {
         let a_is_dir = a.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
         let b_is_dir = b.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
-        
+
         match (a_is_dir, b_is_dir) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
@@ -1389,12 +1372,15 @@ fn list_agents_recursive(
                         Scope::User => "(user)",
                         Scope::Project => "(project)",
                     };
+                    // Truncate long descriptions for display
+                    let description = if agent_info.description.len() > 80 {
+                        format!("{}...", &agent_info.description[..77])
+                    } else {
+                        agent_info.description.clone()
+                    };
                     println!(
                         "- {} {} - {} [{}]",
-                        full_agent_name,
-                        scope_label,
-                        agent_info.agent_type,
-                        agent_info.when_to_use
+                        full_agent_name, scope_label, agent_info.name, description
                     );
                 } else {
                     let scope_label = match scope {
@@ -1412,9 +1398,10 @@ fn list_agents_recursive(
 
 #[derive(Debug)]
 struct AgentInfo {
-    agent_type: String,
-    when_to_use: String,
-    allowed_tools: Vec<String>,
+    name: String,
+    description: String,
+    tools: Option<Vec<String>>,
+    color: Option<String>,
 }
 
 fn parse_agent_metadata(content: &str) -> Option<AgentInfo> {
@@ -1430,36 +1417,61 @@ fn parse_agent_metadata(content: &str) -> Option<AgentInfo> {
     }
 
     let frontmatter = parts[1];
-    
+
     // Parse YAML frontmatter manually (simple parser for our specific fields)
-    let mut agent_type = String::new();
-    let mut when_to_use = String::new();
-    let mut allowed_tools = Vec::new();
+    let mut name = String::new();
+    let mut description = String::new();
+    let mut tools = None;
+    let mut color = None;
 
     for line in frontmatter.lines() {
-        if let Some(value) = line.strip_prefix("agent-type: ") {
-            agent_type = value.trim().to_string();
-        } else if let Some(value) = line.strip_prefix("when-to-use: ") {
-            when_to_use = value.trim().to_string();
-        } else if let Some(value) = line.strip_prefix("allowed-tools: ") {
-            // Parse list format: ["*"] or ["Read", "Write", "Edit"]
-            if let Some(list_str) = value.trim().strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-                allowed_tools = list_str
-                    .split(',')
-                    .map(|s| s.trim().trim_matches('"').to_string())
-                    .collect();
+        // New schema is primary, old schema as fallback for compatibility
+        if let Some(value) = line
+            .strip_prefix("name: ")
+            .or_else(|| line.strip_prefix("agent-type: "))
+        {
+            name = value.trim().to_string();
+        } else if let Some(value) = line
+            .strip_prefix("description: ")
+            .or_else(|| line.strip_prefix("when-to-use: "))
+        {
+            description = value.trim().to_string();
+        } else if let Some(value) = line
+            .strip_prefix("tools: ")
+            .or_else(|| line.strip_prefix("allowed-tools: "))
+        {
+            // Parse as comma-separated string (no array format, ignore '*')
+            let value = value.trim();
+
+            // Skip if it's '*' or an array format
+            if value == "*" || value.starts_with('[') {
+                continue;
             }
+
+            if !value.is_empty() {
+                let tool_list: Vec<String> = value
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if !tool_list.is_empty() {
+                    tools = Some(tool_list);
+                }
+            }
+        } else if let Some(value) = line.strip_prefix("color: ") {
+            color = Some(value.trim().to_string());
         }
     }
 
-    if agent_type.is_empty() {
+    if name.is_empty() {
         return None;
     }
 
     Some(AgentInfo {
-        agent_type,
-        when_to_use,
-        allowed_tools,
+        name,
+        description,
+        tools,
+        color,
     })
 }
 
@@ -1496,7 +1508,7 @@ async fn handle_agents_import_from_url(url: String, scope: Scope) -> Result<()> 
 
     // Extract owner, repo, and path from GitHub URL
     let path_segments: Vec<&str> = parsed_url.path_segments().unwrap().collect();
-    
+
     if path_segments.len() < 5 || path_segments[2] != "blob" {
         anyhow::bail!("Invalid GitHub URL format. Expected: https://github.com/owner/repo/blob/branch/path/to/agent.md");
     }
@@ -1509,7 +1521,7 @@ async fn handle_agents_import_from_url(url: String, scope: Scope) -> Result<()> 
     // Download the file using gh api
     println!("Downloading agent from GitHub...");
     let api_path = format!("repos/{owner}/{repo}/contents/{file_path}?ref={branch}");
-    
+
     let output = Command::new("gh")
         .args(["api", &api_path, "--jq", ".content"])
         .output()?;
@@ -1521,10 +1533,14 @@ async fn handle_agents_import_from_url(url: String, scope: Scope) -> Result<()> 
 
     // Decode base64 content
     let base64_content = String::from_utf8(output.stdout)?;
-    let base64_content = base64_content.trim();
-    
+    // GitHub returns base64 with newlines, we need to remove all whitespace
+    let base64_content: String = base64_content
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+
     use base64::{engine::general_purpose, Engine as _};
-    let content = general_purpose::STANDARD.decode(base64_content)?;
+    let content = general_purpose::STANDARD.decode(&base64_content)?;
     let content_str = String::from_utf8(content)?;
 
     // Extract filename from URL
@@ -1540,7 +1556,7 @@ async fn handle_agents_import_from_url(url: String, scope: Scope) -> Result<()> 
 
 fn handle_agents_import_from_file(file_path: String, scope: Scope) -> Result<()> {
     let path = std::path::Path::new(&file_path);
-    
+
     if !path.exists() {
         anyhow::bail!("File not found: {}", file_path);
     }
@@ -1567,9 +1583,14 @@ fn handle_agents_import_from_file(file_path: String, scope: Scope) -> Result<()>
 fn save_agent_content(content: &str, filename: &str, scope: Scope) -> Result<()> {
     // Validate the agent content
     if let Some(agent_info) = parse_agent_metadata(content) {
-        println!("Importing agent: {}", agent_info.agent_type);
-        println!("When to use: {}", agent_info.when_to_use);
-        println!("Allowed tools: {:?}", agent_info.allowed_tools);
+        println!("Importing agent: {}", agent_info.name);
+        println!("Description: {}", agent_info.description);
+        if let Some(ref tools) = agent_info.tools {
+            println!("Tools: {}", tools.join(", "));
+        }
+        if let Some(ref color) = agent_info.color {
+            println!("Color: {color}");
+        }
     } else {
         println!("Warning: Agent file does not contain valid metadata");
     }
@@ -1609,12 +1630,7 @@ fn handle_agents_delete(interactive: bool) -> Result<()> {
     let project_scope = Scope::Project;
     let project_agents_dir = get_agents_dir(&project_scope)?;
     if project_agents_dir.exists() {
-        collect_agents_recursive(
-            &project_agents_dir,
-            "",
-            &project_scope,
-            &mut agents_list,
-        )?;
+        collect_agents_recursive(&project_agents_dir, "", &project_scope, &mut agents_list)?;
     }
 
     if agents_list.is_empty() {
@@ -1734,9 +1750,7 @@ fn handle_agents_clean(scope: Scope) -> Result<()> {
         Scope::Project => "project",
     };
 
-    println!(
-        "This will delete {agent_count} agent(s) from {scope_label} scope."
-    );
+    println!("This will delete {agent_count} agent(s) from {scope_label} scope.");
     println!("Directory: {}", agents_dir.display());
     print!("Are you sure? (y/N): ");
     io::stdout().flush()?;
@@ -1788,9 +1802,10 @@ STRUCTURE:
 - Store in .claude/agents/ directory
 - Filename: agent-name.md (descriptive name)
 - Required YAML frontmatter with:
-  - agent-type: descriptive-name-of-agent
-  - when-to-use: Brief description of when to use this agent
-  - allowed-tools: ["*"] or specific tools like ["Read", "Edit", "Bash"]
+  - name: descriptive-name-of-agent
+  - description: Brief description of when to use this agent
+  - tools: (optional) Comma-separated list of tools like Read, Edit, Bash
+  - color: (optional) Color for the agent display
 
 CONTENT:
 - Clear instructions for the agent's specialized behavior
@@ -1801,9 +1816,10 @@ CONTENT:
 EXAMPLE:
 ```markdown
 ---
-agent-type: security-analyst
-when-to-use: Security vulnerability analysis, threat modeling, and security best practices recommendations
-allowed-tools: ["*"]
+name: security-analyst
+description: Security vulnerability analysis, threat modeling, and security best practices recommendations
+tools: Read, Grep, Edit
+color: red
 ---
 
 You are a security specialist focused on identifying vulnerabilities and recommending secure coding practices.
@@ -1870,37 +1886,40 @@ mod tests {
     #[test]
     fn test_parse_agent_metadata_valid() {
         let content = r#"---
-agent-type: security-analyst
-when-to-use: Security vulnerability analysis, threat modeling, and security best practices recommendations
-allowed-tools: ["*"]
+name: security-analyst
+description: Security vulnerability analysis, threat modeling, and security best practices recommendations
+tools: ["*"]
+color: red
 ---
 
 You are a security specialist focused on identifying vulnerabilities and recommending secure coding practices.
 "#;
 
         let agent_info = parse_agent_metadata(content).unwrap();
-        assert_eq!(agent_info.agent_type, "security-analyst");
+        assert_eq!(agent_info.name, "security-analyst");
         assert_eq!(
-            agent_info.when_to_use,
+            agent_info.description,
             "Security vulnerability analysis, threat modeling, and security best practices recommendations"
         );
-        assert_eq!(agent_info.allowed_tools, vec!["*"]);
+        assert_eq!(agent_info.tools, None); // "*" is ignored
+        assert_eq!(agent_info.color, Some("red".to_string()));
     }
 
     #[test]
-    fn test_parse_agent_metadata_with_multiple_tools() {
+    fn test_parse_agent_metadata_array_format_ignored() {
         let content = r#"---
-agent-type: code-reviewer
-when-to-use: Code review and best practices
-allowed-tools: ["Read", "Edit", "Bash"]
+name: code-reviewer
+description: Code review and best practices
+tools: ["Read", "Edit", "Bash"]
 ---
 
 Review code for best practices.
 "#;
 
         let agent_info = parse_agent_metadata(content).unwrap();
-        assert_eq!(agent_info.agent_type, "code-reviewer");
-        assert_eq!(agent_info.allowed_tools, vec!["Read", "Edit", "Bash"]);
+        assert_eq!(agent_info.name, "code-reviewer");
+        assert_eq!(agent_info.tools, None); // Array format is ignored
+        assert_eq!(agent_info.color, None);
     }
 
     #[test]
@@ -1910,10 +1929,10 @@ Review code for best practices.
     }
 
     #[test]
-    fn test_parse_agent_metadata_missing_agent_type() {
+    fn test_parse_agent_metadata_missing_name() {
         let content = r#"---
-when-to-use: Some description
-allowed-tools: ["*"]
+description: Some description
+tools: ["*"]
 ---
 
 Content
@@ -1922,10 +1941,70 @@ Content
     }
 
     #[test]
+    fn test_parse_agent_metadata_backward_compatibility() {
+        // Test that old schema still works
+        let content = r#"---
+agent-type: legacy-agent
+when-to-use: Legacy agent for backward compatibility
+allowed-tools: ["*"]
+---
+
+Content
+"#;
+        let agent_info = parse_agent_metadata(content).unwrap();
+        assert_eq!(agent_info.name, "legacy-agent");
+        assert_eq!(
+            agent_info.description,
+            "Legacy agent for backward compatibility"
+        );
+        assert_eq!(agent_info.tools, None); // "*" is ignored
+        assert_eq!(agent_info.color, None);
+    }
+
+    #[test]
+    fn test_parse_agent_metadata_comma_separated_tools() {
+        // Test with comma-separated tools
+        let content = r#"---
+name: test-agent
+description: Test agent with comma-separated tools
+tools: Read, Write, Edit, Bash
+---
+
+Content
+"#;
+        let agent_info = parse_agent_metadata(content).unwrap();
+        assert_eq!(agent_info.name, "test-agent");
+        assert_eq!(
+            agent_info.tools,
+            Some(vec![
+                "Read".to_string(),
+                "Write".to_string(),
+                "Edit".to_string(),
+                "Bash".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn test_parse_agent_metadata_no_tools() {
+        // Test agent without tools field
+        let content = r#"---
+name: minimal-agent
+description: Agent without tools
+---
+
+Content
+"#;
+        let agent_info = parse_agent_metadata(content).unwrap();
+        assert_eq!(agent_info.name, "minimal-agent");
+        assert_eq!(agent_info.tools, None);
+    }
+
+    #[test]
     fn test_get_agents_dir() {
         let user_dir = get_agents_dir(&Scope::User).unwrap();
         assert!(user_dir.to_string_lossy().contains("agents"));
-        
+
         let project_dir = get_agents_dir(&Scope::Project).unwrap();
         assert!(project_dir.to_string_lossy().contains(".claude"));
         assert!(project_dir.to_string_lossy().contains("agents"));
