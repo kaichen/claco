@@ -17,12 +17,25 @@ On Linux/macOS:
 
 ## Features and Usage
 
-- **hooks**: Manage hooks configuration
+- **agents**: Manage custom agents (list, import, delete, clean, generate)
 - **commands**: Manage slash commands configurations
+- **hooks**: Manage hooks configuration
 - **history**: Lists all user input messages for the current project
-- **projects**: Lists all projects with their session IDs
 - **session**: Shows session info including first user message and timestamp
-- **live**: Shows active claude code IDE sessions with PID and workspace info
+- **projects**: Lists all projects with their session IDs
+
+Manage Custom Agents
+
+```bash
+# List all custom agents
+claco agents list
+# Import agent from GitHub
+claco agents import https://github.com/owner/repo/blob/main/agent.md --scope user
+# Import agent from local file
+claco agents import ../my-agent.md --scope project
+# Generate new agent using Claude
+claco agents generate "Create a security analyst agent"
+```
 
 Manage Hooks
 

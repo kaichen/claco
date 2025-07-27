@@ -41,12 +41,9 @@ jobs:
           # Direct prompt for automated review (no @claude mention needed)
           direct_prompt: |
             Please review this pull request and provide feedback on:
-            - Code quality and best practices
-            - Potential bugs or issues
-            - Performance considerations
-            - Security concerns
-            - Test coverage
-            
+            - Focused exclusively on showstopper bugs in logic, performance, and security.
+            - Verify logical correctness: Confirm the core algorithm is sound and the tool is robust against panics from edge cases or errors.
+            - All non-critical feedback (style, documentation, minor refactoring) is explicitly out of scope
             Be constructive and helpful in your feedback.
 
           # Optional: Use sticky comments to make Claude reuse the same comment on subsequent pushes to the same PR
