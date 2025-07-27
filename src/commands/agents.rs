@@ -14,7 +14,9 @@ use std::time::Duration;
 struct AgentInfo {
     name: String,
     description: String,
+    #[allow(dead_code)]
     tools: Option<Vec<String>>,
+    #[allow(dead_code)]
     color: Option<String>,
 }
 
@@ -256,7 +258,7 @@ async fn handle_agents_import_from_url(url: String, scope: Scope) -> Result<()> 
 
     // Check if it's a GitHub URL
     if parsed_url.host_str() != Some("github.com") {
-        anyhow::bail!("Only GitHub URLs are supported. Example: https://github.com/owner/repo/blob/main/path/to/agent.md");
+        anyhow::bail!("Only GitHub URLs are supported. Example: https://github.com/owner/repo/blob/main/path/to/agent.md or https://github.com/owner/repo/tree/main/path/to/folder");
     }
 
     // Extract owner, repo, and path from GitHub URL
@@ -265,11 +267,32 @@ async fn handle_agents_import_from_url(url: String, scope: Scope) -> Result<()> 
         .ok_or_else(|| anyhow::anyhow!("Invalid GitHub URL: No path segments"))?
         .collect();
 
-    if path_segments.len() < 5 || path_segments[2] != "blob" {
-        anyhow::bail!("Invalid GitHub URL format. Expected: https://github.com/owner/repo/blob/branch/path/to/agent.md");
+    if path_segments.len() < 4 {
+        anyhow::bail!("Invalid GitHub URL format. Expected: https://github.com/owner/repo/blob/branch/path or https://github.com/owner/repo/tree/branch/path");
     }
 
-    // Validate and escape URL components to prevent command injection
+    // Check if it's a tree (folder) or blob (file) URL
+    let url_type = path_segments.get(2).copied();
+    
+    match url_type {
+        Some("blob") => {
+            if path_segments.len() < 5 {
+                anyhow::bail!("Invalid file URL format. Expected: https://github.com/owner/repo/blob/branch/path/to/agent.md");
+            }
+            // Import single file
+            import_single_agent_from_github(&path_segments, scope).await
+        }
+        Some("tree") => {
+            // Import all .md files from folder
+            import_agents_folder_from_github(&path_segments, scope).await
+        }
+        _ => {
+            anyhow::bail!("Invalid GitHub URL format. URL must contain either 'blob' (for files) or 'tree' (for folders)");
+        }
+}
+}
+
+async fn import_single_agent_from_github(path_segments: &[&str], scope: Scope) -> Result<()> {
     let owner = path_segments[0];
     let repo = path_segments[1];
     let branch = path_segments[3];
@@ -290,7 +313,6 @@ async fn handle_agents_import_from_url(url: String, scope: Scope) -> Result<()> 
     }
 
     // Download the file using gh api
-    println!("Downloading agent from GitHub...");
     let api_path = format!("repos/{owner}/{repo}/contents/{file_path}?ref={branch}");
 
     let output = Command::new("gh")
@@ -347,6 +369,110 @@ async fn handle_agents_import_from_url(url: String, scope: Scope) -> Result<()> 
     Ok(())
 }
 
+async fn import_agents_folder_from_github(path_segments: &[&str], scope: Scope) -> Result<()> {
+    let owner = path_segments[0];
+    let repo = path_segments[1];
+    let branch = path_segments[3];
+    let folder_path = if path_segments.len() > 4 {
+        path_segments[4..].join("/")
+    } else {
+        String::new()
+    };
+
+    // Validate components don't contain dangerous characters
+    for component in [owner, repo, branch] {
+        if component.contains([
+            '$', '`', '\\', '"', '\'', '\n', '\r', ';', '|', '&', '<', '>', '(', ')',
+        ]) {
+            anyhow::bail!("Invalid characters in URL component: {}", component);
+        }
+    }
+
+    // Additional validation for folder path
+    if folder_path.contains("..") {
+        anyhow::bail!("Invalid folder path in URL: Path traversal detected");
+    }
+
+    // List files in the folder using gh api
+    let api_path = format!("repos/{owner}/{repo}/contents/{folder_path}?ref={branch}");
+
+    let output = Command::new("gh")
+        .args(["api", &api_path])
+        .output()?;
+
+    if !output.status.success() {
+        let error = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("Failed to list folder contents: {}", error);
+    }
+
+    // Parse JSON response
+    let json_str = String::from_utf8(output.stdout)?;
+    let files: serde_json::Value = serde_json::from_str(&json_str)?;
+
+    // Filter for .md files
+    let md_files: Vec<&serde_json::Value> = files
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("Expected JSON array response"))?
+        .iter()
+        .filter(|file| {
+            file.get("type").and_then(|t| t.as_str()) == Some("file")
+                && file
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .map(|n| n.ends_with(".md"))
+                    .unwrap_or(false)
+        })
+        .collect();
+
+    if md_files.is_empty() {
+        println!("No .md files found in the specified folder");
+        return Ok(());
+    }
+
+    println!("Importing {} agent file(s)...", md_files.len());
+
+    let mut imported_count = 0;
+    let mut failed_count = 0;
+
+    // Import each .md file
+    for file in md_files {
+        let file_name = file
+            .get("name")
+            .and_then(|n| n.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing file name"))?;
+
+        let file_path = if folder_path.is_empty() {
+            file_name.to_string()
+        } else {
+            format!("{folder_path}/{file_name}")
+        };
+
+
+        // Build the blob URL path segments
+        let mut file_segments = vec![owner, repo, "blob", branch];
+        file_segments.extend(file_path.split('/'));
+
+        match import_single_agent_from_github(&file_segments, scope.clone()).await {
+            Ok(_) => imported_count += 1,
+            Err(e) => {
+                eprintln!("Failed to import {file_name}: {e}");
+                failed_count += 1;
+            }
+        }
+    }
+
+    if failed_count > 0 {
+        println!(
+            "\n✓ Imported {imported_count} agent(s), {failed_count} failed"
+        );
+        anyhow::bail!("Some imports failed");
+    } else {
+        println!("\n✓ Successfully imported {imported_count} agent(s)");
+    }
+
+    Ok(())
+}
+
 fn handle_agents_import_from_file(file_path: String, scope: Scope) -> Result<()> {
     let path = std::path::Path::new(&file_path);
 
@@ -399,19 +525,6 @@ fn validate_agent_filename(filename: &str) -> Result<()> {
 fn save_agent_content(content: &str, filename: &str, scope: Scope) -> Result<()> {
     // Validate filename for security
     validate_agent_filename(filename)?;
-    // Validate the agent content
-    if let Some(agent_info) = parse_agent_metadata(content) {
-        println!("Importing agent: {}", agent_info.name);
-        println!("Description: {}", agent_info.description);
-        if let Some(ref tools) = agent_info.tools {
-            println!("Tools: {}", tools.join(", "));
-        }
-        if let Some(ref color) = agent_info.color {
-            println!("Color: {color}");
-        }
-    } else {
-        println!("Warning: Agent file does not contain valid metadata");
-    }
 
     // Get the agents directory
     let agents_dir = get_agents_dir(&scope)?;
@@ -423,7 +536,7 @@ fn save_agent_content(content: &str, filename: &str, scope: Scope) -> Result<()>
     let agent_path = agents_dir.join(filename);
     fs::write(&agent_path, content)?;
 
-    println!("✓ Agent imported successfully to: {}", agent_path.display());
+    println!("✓ Imported {}", filename.trim_end_matches(".md"));
 
     Ok(())
 }
