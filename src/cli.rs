@@ -96,9 +96,18 @@ pub enum CommandsSubcommand {
         scope: Scope,
     },
     /// Generate command from prompt via Claude Code itself
+    #[command(alias = "gen")]
     Generate {
-        /// The prompt to generate a command from
+        /// The prompt to generate a command from (or filename for --template)
         prompt: String,
+        /// Generate a template markdown file with all frontmatter properties
+        #[arg(
+            short,
+            long,
+            default_value = "false",
+            help = "Create a template with all available frontmatter properties and examples"
+        )]
+        template: bool,
     },
     /// Delete commands interactively
     Delete {
@@ -143,8 +152,17 @@ pub enum AgentsSubcommand {
         scope: Scope,
     },
     /// Generate agent from prompt via Claude Code
+    #[command(alias = "gen")]
     Generate {
-        /// The prompt to generate an agent from
+        /// The prompt to generate an agent from (or filename for --template)
         prompt: String,
+        /// Generate a template markdown file with all frontmatter properties
+        #[arg(
+            short,
+            long,
+            default_value = "false",
+            help = "Create a template with all available frontmatter properties and instructions guide"
+        )]
+        template: bool,
     },
 }

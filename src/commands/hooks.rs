@@ -38,12 +38,12 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
                 println!("Settings file: {}", settings_path.display());
                 println!();
 
-                if hooks.events.is_empty() {
+                if hooks.is_empty() {
                     println!("No hooks found");
                     return Ok(());
                 }
 
-                for (event, matchers) in &hooks.events {
+                for (event, matchers) in hooks {
                     println!("Event: {event}");
                     for matcher in matchers {
                         for hook in &matcher.hooks {
@@ -73,9 +73,9 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
             let user_settings = load_settings(&user_settings_path)?;
 
             if let Some(hooks) = &user_settings.hooks {
-                if !hooks.events.is_empty() {
+                if !hooks.is_empty() {
                     println!("User hooks: {}", user_settings_path.display());
-                    for (event, matchers) in &hooks.events {
+                    for (event, matchers) in hooks {
                         println!("  Event: {event}");
                         for matcher in matchers {
                             for hook in &matcher.hooks {
@@ -102,9 +102,9 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
             let project_settings = load_settings(&project_settings_path)?;
 
             if let Some(hooks) = &project_settings.hooks {
-                if !hooks.events.is_empty() {
+                if !hooks.is_empty() {
                     println!("Project hooks: {}", project_settings_path.display());
-                    for (event, matchers) in &hooks.events {
+                    for (event, matchers) in hooks {
                         println!("  Event: {event}");
                         for matcher in matchers {
                             for hook in &matcher.hooks {
@@ -174,7 +174,7 @@ fn handle_hooks_add(scope: String, event: String, matcher: String, command: Stri
     let hooks = settings.hooks.as_mut().unwrap();
 
     // Get or create the event entry
-    let event_matchers = hooks.events.entry(event.clone()).or_insert_with(Vec::new);
+    let event_matchers = hooks.entry(event.clone()).or_insert_with(Vec::new);
 
     // Find existing matcher or create new one
     let matcher_entry = event_matchers.iter_mut().find(|m| m.matcher == matcher);
@@ -229,7 +229,7 @@ fn handle_hooks_delete(interactive: bool) -> Result<()> {
 
     // Add user hooks
     if let Some(hooks) = &user_settings.hooks {
-        for (event, matchers) in &hooks.events {
+        for (event, matchers) in hooks {
             for (matcher_idx, matcher) in matchers.iter().enumerate() {
                 for (hook_idx, hook) in matcher.hooks.iter().enumerate() {
                     let mut parts = vec![];
@@ -256,7 +256,7 @@ fn handle_hooks_delete(interactive: bool) -> Result<()> {
 
     // Add project hooks
     if let Some(hooks) = &project_settings.hooks {
-        for (event, matchers) in &hooks.events {
+        for (event, matchers) in hooks {
             for (matcher_idx, matcher) in matchers.iter().enumerate() {
                 for (hook_idx, hook) in matcher.hooks.iter().enumerate() {
                     let mut parts = vec![];
@@ -339,7 +339,7 @@ fn handle_hooks_delete(interactive: bool) -> Result<()> {
         let mut user_settings = load_settings(&user_settings_path)?;
         if let Some(hooks) = &mut user_settings.hooks {
             for (event, matcher_idx, hook_idx) in user_removals.iter().rev() {
-                if let Some(matchers) = hooks.events.get_mut(event) {
+                if let Some(matchers) = hooks.get_mut(event) {
                     if let Some(matcher) = matchers.get_mut(*matcher_idx) {
                         if *hook_idx < matcher.hooks.len() {
                             matcher.hooks.remove(*hook_idx);
@@ -349,7 +349,7 @@ fn handle_hooks_delete(interactive: bool) -> Result<()> {
                         }
                     }
                     if matchers.is_empty() {
-                        hooks.events.remove(event);
+                        hooks.remove(event);
                     }
                 }
             }
@@ -362,7 +362,7 @@ fn handle_hooks_delete(interactive: bool) -> Result<()> {
         let mut project_settings = load_settings(&project_settings_path)?;
         if let Some(hooks) = &mut project_settings.hooks {
             for (event, matcher_idx, hook_idx) in project_removals.iter().rev() {
-                if let Some(matchers) = hooks.events.get_mut(event) {
+                if let Some(matchers) = hooks.get_mut(event) {
                     if let Some(matcher) = matchers.get_mut(*matcher_idx) {
                         if *hook_idx < matcher.hooks.len() {
                             matcher.hooks.remove(*hook_idx);
@@ -372,7 +372,7 @@ fn handle_hooks_delete(interactive: bool) -> Result<()> {
                         }
                     }
                     if matchers.is_empty() {
-                        hooks.events.remove(event);
+                        hooks.remove(event);
                     }
                 }
             }

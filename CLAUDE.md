@@ -32,6 +32,7 @@ cargo clippy
 
 - Always run `cargo fmt` before git commit to ensure consistent code formatting
 - Run `cargo lint` after code changes
+- No emoji for console print, if needed use special ascii characters
 
 ## Architecture
 
@@ -71,6 +72,44 @@ Each JSONL entry contains:
 - `cwd`: Working directory
 - Additional metadata (parentUuid, version, etc.)
 
+## claude command help
+
+```
+Usage: claude [options] [command] [prompt]
+
+Claude Code - starts an interactive session by default, use -p/--print for non-interactive output
+
+Arguments:
+  prompt                           Your prompt
+
+Options:
+  -d, --debug                      Enable debug mode
+  --verbose                        Override verbose mode setting from config
+  -p, --print                      Print response and exit (useful for pipes)
+  --output-format <format>         Output format (only works with --print): "text" (default), "json" (single result), or "stream-json" (realtime streaming) (choices: "text", "json",
+                                   "stream-json")
+  --input-format <format>          Input format (only works with --print): "text" (default), or "stream-json" (realtime streaming input) (choices: "text", "stream-json")
+  --mcp-debug                      [DEPRECATED. Use --debug instead] Enable MCP debug mode (shows MCP server errors)
+  --dangerously-skip-permissions   Bypass all permission checks. Recommended only for sandboxes with no internet access.
+  --allowedTools <tools...>        Comma or space-separated list of tool names to allow (e.g. "Bash(git:*) Edit")
+  --disallowedTools <tools...>     Comma or space-separated list of tool names to deny (e.g. "Bash(git:*) Edit")
+  --mcp-config <file or string>    Load MCP servers from a JSON file or string
+  --append-system-prompt <prompt>  Append a system prompt to the default system prompt
+  --permission-mode <mode>         Permission mode to use for the session (choices: "acceptEdits", "bypassPermissions", "default", "plan")
+  -c, --continue                   Continue the most recent conversation
+  -r, --resume [sessionId]         Resume a conversation - provide a session ID or interactively select a conversation to resume
+  --model <model>                  Model for the current session. Provide an alias for the latest model (e.g. 'sonnet' or 'opus') or a model's full name (e.g.
+                                   'claude-sonnet-4-20250514').
+  --fallback-model <model>         Enable automatic fallback to specified model when default model is overloaded (only works with --print)
+  --settings <file>                Path to a settings JSON file to load additional settings from
+  --add-dir <directories...>       Additional directories to allow tool access to
+  --ide                            Automatically connect to IDE on startup if exactly one valid IDE is available
+  --strict-mcp-config              Only use MCP servers from --mcp-config, ignoring all other MCP configurations
+  --session-id <uuid>              Use a specific session ID for the conversation (must be a valid UUID)
+  -v, --version                    Output the version number
+  -h, --help                       Display help for command
+```
+
 ## Implementation Notes
 
 When implementing the planned features, you'll need to:
@@ -79,4 +118,3 @@ When implementing the planned features, you'll need to:
 3. Implement JSONL parsing for session files
 4. Handle platform-specific home directory paths
 5. Parse the sanitized project directory names back to original paths
-```
