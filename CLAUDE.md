@@ -31,6 +31,7 @@ cargo clippy
 ## Development Best Practices
 
 - Always run `cargo fmt` before git commit to ensure consistent code formatting
+- Run `cargo lint` after code changes
 
 ## Architecture
 

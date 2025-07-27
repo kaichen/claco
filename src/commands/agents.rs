@@ -273,7 +273,7 @@ async fn handle_agents_import_from_url(url: String, scope: Scope) -> Result<()> 
 
     // Check if it's a tree (folder) or blob (file) URL
     let url_type = path_segments.get(2).copied();
-    
+
     match url_type {
         Some("blob") => {
             if path_segments.len() < 5 {
@@ -289,7 +289,7 @@ async fn handle_agents_import_from_url(url: String, scope: Scope) -> Result<()> 
         _ => {
             anyhow::bail!("Invalid GitHub URL format. URL must contain either 'blob' (for files) or 'tree' (for folders)");
         }
-}
+    }
 }
 
 async fn import_single_agent_from_github(path_segments: &[&str], scope: Scope) -> Result<()> {
@@ -396,9 +396,7 @@ async fn import_agents_folder_from_github(path_segments: &[&str], scope: Scope) 
     // List files in the folder using gh api
     let api_path = format!("repos/{owner}/{repo}/contents/{folder_path}?ref={branch}");
 
-    let output = Command::new("gh")
-        .args(["api", &api_path])
-        .output()?;
+    let output = Command::new("gh").args(["api", &api_path]).output()?;
 
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr);
@@ -447,7 +445,6 @@ async fn import_agents_folder_from_github(path_segments: &[&str], scope: Scope) 
             format!("{folder_path}/{file_name}")
         };
 
-
         // Build the blob URL path segments
         let mut file_segments = vec![owner, repo, "blob", branch];
         file_segments.extend(file_path.split('/'));
@@ -462,9 +459,7 @@ async fn import_agents_folder_from_github(path_segments: &[&str], scope: Scope) 
     }
 
     if failed_count > 0 {
-        println!(
-            "\n✓ Imported {imported_count} agent(s), {failed_count} failed"
-        );
+        println!("\n✓ Imported {imported_count} agent(s), {failed_count} failed");
         anyhow::bail!("Some imports failed");
     } else {
         println!("\n✓ Successfully imported {imported_count} agent(s)");

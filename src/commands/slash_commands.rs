@@ -162,7 +162,7 @@ async fn handle_commands_import(url: String, scope: Scope) -> Result<()> {
 
     // Check if it's a tree (folder) or blob (file) URL
     let url_type = path_segments.get(2).copied();
-    
+
     match url_type {
         Some("blob") => {
             if path_segments.len() < 5 {
@@ -178,7 +178,7 @@ async fn handle_commands_import(url: String, scope: Scope) -> Result<()> {
         _ => {
             anyhow::bail!("Invalid GitHub URL format. URL must contain either 'blob' (for files) or 'tree' (for folders)");
         }
-}
+    }
 }
 
 async fn import_single_command_from_github(path_segments: &[&str], scope: Scope) -> Result<()> {
@@ -212,7 +212,10 @@ async fn import_single_command_from_github(path_segments: &[&str], scope: Scope)
 
     // Validate filename for security
     if filename.contains("..") || filename.contains("/") || filename.contains("\\") {
-        anyhow::bail!("Invalid filename '{}': Path traversal not allowed", filename);
+        anyhow::bail!(
+            "Invalid filename '{}': Path traversal not allowed",
+            filename
+        );
     }
 
     // Check for other dangerous characters
@@ -325,9 +328,7 @@ async fn import_commands_folder_from_github(path_segments: &[&str], scope: Scope
     println!("Listing commands in GitHub folder...");
     let api_path = format!("repos/{owner}/{repo}/contents/{folder_path}?ref={branch}");
 
-    let output = Command::new("gh")
-        .args(["api", &api_path])
-        .output()?;
+    let output = Command::new("gh").args(["api", &api_path]).output()?;
 
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr);
@@ -391,9 +392,7 @@ async fn import_commands_folder_from_github(path_segments: &[&str], scope: Scope
         }
     }
 
-    println!(
-        "\n✓ Import complete: {imported_count} succeeded, {failed_count} failed"
-    );
+    println!("\n✓ Import complete: {imported_count} succeeded, {failed_count} failed");
 
     if failed_count > 0 {
         anyhow::bail!("Some imports failed");
