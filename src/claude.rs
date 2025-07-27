@@ -29,7 +29,6 @@ pub struct Message {
     pub content: String,
 }
 
-
 /// Represents a single hook configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hook {
@@ -96,7 +95,6 @@ pub fn project_dir(cwd: &str) -> PathBuf {
     let sanitized = sanitize_project_path(cwd);
     claude_home().join("projects").join(sanitized)
 }
-
 
 /// Get the path to user settings.json
 pub fn user_settings_path() -> PathBuf {

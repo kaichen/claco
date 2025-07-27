@@ -28,6 +28,10 @@ cargo fmt
 cargo clippy
 ```
 
+## Development Best Practices
+
+- Always run `cargo fmt` before git commit to ensure consistent code formatting
+
 ## Architecture
 
 The project is a Rust CLI application with the following structure:
@@ -74,3 +78,4 @@ When implementing the planned features, you'll need to:
 3. Implement JSONL parsing for session files
 4. Handle platform-specific home directory paths
 5. Parse the sanitized project directory names back to original paths
+```
