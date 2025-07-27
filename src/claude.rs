@@ -29,18 +29,6 @@ pub struct Message {
     pub content: String,
 }
 
-/// Represents a lock file in the ide directory
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LockFile {
-    pub pid: u32,
-    #[serde(rename = "workspaceFolders")]
-    pub workspace_folders: Vec<String>,
-    #[serde(rename = "ideName")]
-    pub ide_name: String,
-    pub transport: String,
-    #[serde(rename = "authToken")]
-    pub auth_token: String,
-}
 
 /// Represents a single hook configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,10 +97,6 @@ pub fn project_dir(cwd: &str) -> PathBuf {
     claude_home().join("projects").join(sanitized)
 }
 
-/// Get the path to the ide directory
-pub fn ide_dir() -> PathBuf {
-    claude_home().join("ide")
-}
 
 /// Get the path to user settings.json
 pub fn user_settings_path() -> PathBuf {

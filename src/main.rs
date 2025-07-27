@@ -1,9 +1,9 @@
 use anyhow::Result;
 use chrono::{DateTime, Local};
 use claco::{
-    claude_home, desanitize_project_path, ide_dir, load_settings, project_settings_path,
+    claude_home, desanitize_project_path, load_settings, project_settings_path,
     save_settings, user_settings_path, AgentsSubcommand, Cli, Commands, CommandsSubcommand, Hook, HookMatcher,
-    HooksAction, LockFile, Scope, SessionEntry,
+    HooksAction, Scope, SessionEntry,
 };
 use clap::Parser;
 use regex::Regex;
@@ -39,13 +39,12 @@ async fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)?;
 
     match cli.command {
+        Commands::Agents(cmd) => handle_agents(cmd).await?,
+        Commands::Commands(cmd) => handle_commands(cmd).await?,
+        Commands::Hooks { action } => handle_hooks(action)?,
         Commands::History { session } => handle_history(session)?,
         Commands::Session { session_id } => handle_session(session_id)?,
         Commands::Projects => handle_projects()?,
-        Commands::Live => handle_live()?,
-        Commands::Hooks { action } => handle_hooks(action)?,
-        Commands::Commands(cmd) => handle_commands(cmd).await?,
-        Commands::Agents(cmd) => handle_agents(cmd).await?,
     }
 
     Ok(())
@@ -369,33 +368,6 @@ fn handle_projects() -> Result<()> {
     Ok(())
 }
 
-fn handle_live() -> Result<()> {
-    let ide_path = ide_dir();
-
-    if !ide_path.exists() {
-        println!("No active Claude sessions found");
-        return Ok(());
-    }
-
-    for entry in fs::read_dir(&ide_path)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("lock") {
-            // Read and parse lock file
-            let content = fs::read_to_string(&path)?;
-            let lock_info: LockFile = serde_json::from_str(&content)?;
-
-            println!("Active session:");
-            println!("  PID: {}", lock_info.pid);
-            println!("  IDE: {}", lock_info.ide_name);
-            println!("  Workspaces: {:?}", lock_info.workspace_folders);
-            println!();
-        }
-    }
-
-    Ok(())
-}
 
 fn handle_hooks(action: HooksAction) -> Result<()> {
     match action {
@@ -1360,10 +1332,8 @@ fn handle_agents_list(scope: Option<Scope>) -> Result<()> {
                 );
                 println!();
                 list_agents_recursive(&project_agents_dir, "", &project_scope)?;
-            } else {
-                if !user_agents_dir.exists() {
-                    println!("No agents found in user or project directories.");
-                }
+            } else if !user_agents_dir.exists() {
+                println!("No agents found in user or project directories.");
             }
         }
     }
@@ -1401,7 +1371,7 @@ fn list_agents_recursive(
             let new_namespace = if namespace.is_empty() {
                 file_name_str.to_string()
             } else {
-                format!("{}/{}", namespace, file_name_str)
+                format!("{namespace}/{file_name_str}")
             };
             list_agents_recursive(&path, &new_namespace, scope)?;
         } else if file_name_str.ends_with(".md") {
@@ -1409,7 +1379,7 @@ fn list_agents_recursive(
             let full_agent_name = if namespace.is_empty() {
                 agent_name.to_string()
             } else {
-                format!("{}/{}", namespace, agent_name)
+                format!("{namespace}/{agent_name}")
             };
 
             // Try to read and parse agent metadata
@@ -1431,7 +1401,7 @@ fn list_agents_recursive(
                         Scope::User => "(user)",
                         Scope::Project => "(project)",
                     };
-                    println!("- {} {} - (no metadata)", full_agent_name, scope_label);
+                    println!("- {full_agent_name} {scope_label} - (no metadata)");
                 }
             }
         }
@@ -1538,10 +1508,10 @@ async fn handle_agents_import_from_url(url: String, scope: Scope) -> Result<()> 
 
     // Download the file using gh api
     println!("Downloading agent from GitHub...");
-    let api_path = format!("repos/{}/{}/contents/{}?ref={}", owner, repo, file_path, branch);
+    let api_path = format!("repos/{owner}/{repo}/contents/{file_path}?ref={branch}");
     
     let output = Command::new("gh")
-        .args(&["api", &api_path, "--jq", ".content"])
+        .args(["api", &api_path, "--jq", ".content"])
         .output()?;
 
     if !output.status.success() {
@@ -1727,7 +1697,7 @@ fn collect_agents_recursive(
             let new_namespace = if namespace.is_empty() {
                 file_name_str.to_string()
             } else {
-                format!("{}/{}", namespace, file_name_str)
+                format!("{namespace}/{file_name_str}")
             };
             collect_agents_recursive(&path, &new_namespace, scope, agents_list)?;
         } else if file_name_str.ends_with(".md") {
@@ -1735,7 +1705,7 @@ fn collect_agents_recursive(
             let full_agent_name = if namespace.is_empty() {
                 agent_name.to_string()
             } else {
-                format!("{}/{}", namespace, agent_name)
+                format!("{namespace}/{agent_name}")
             };
             agents_list.push((full_agent_name, scope.clone(), path.clone()));
         }
@@ -1765,8 +1735,7 @@ fn handle_agents_clean(scope: Scope) -> Result<()> {
     };
 
     println!(
-        "This will delete {} agent(s) from {} scope.",
-        agent_count, scope_label
+        "This will delete {agent_count} agent(s) from {scope_label} scope."
     );
     println!("Directory: {}", agents_dir.display());
     print!("Are you sure? (y/N): ");
@@ -1782,7 +1751,7 @@ fn handle_agents_clean(scope: Scope) -> Result<()> {
 
     // Remove the entire agents directory
     fs::remove_dir_all(&agents_dir)?;
-    println!("✓ Removed {} agent(s)", agent_count);
+    println!("✓ Removed {agent_count} agent(s)");
 
     Ok(())
 }
@@ -1870,8 +1839,8 @@ Generate specialized, practical agents that provide clear value for specific tas
     });
 
     // Launch Claude with the prompt
-    let mut cmd = Command::new("claude")
-        .arg("--no-color")
+    let mut cmd = Command::new("claude");
+    cmd.arg("--no-color")
         .arg("--system")
         .arg(system_prompt)
         .arg(&claude_prompt)

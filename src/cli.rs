@@ -15,6 +15,17 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Manage custom agents
+    #[command(subcommand)]
+    Agents(AgentsSubcommand),
+    /// Manage slash commands
+    #[command(subcommand)]
+    Commands(CommandsSubcommand),
+    /// Manage hooks
+    Hooks {
+        #[command(subcommand)]
+        action: HooksAction,
+    },
     /// List all user input messages for the current project
     #[command(alias = "showmeyourtalk")]
     History {
@@ -29,19 +40,6 @@ pub enum Commands {
     },
     /// List all projects with their sessions
     Projects,
-    /// List all active Claude sessions
-    Live,
-    /// Manage hooks
-    Hooks {
-        #[command(subcommand)]
-        action: HooksAction,
-    },
-    /// Manage slash commands
-    #[command(subcommand)]
-    Commands(CommandsSubcommand),
-    /// Manage custom agents
-    #[command(subcommand)]
-    Agents(AgentsSubcommand),
 }
 
 #[derive(Subcommand)]
