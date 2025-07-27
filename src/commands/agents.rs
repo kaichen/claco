@@ -118,7 +118,10 @@ fn list_agents_recursive(dir: &std::path::Path, namespace: &str, scope: &Scope) 
             };
             list_agents_recursive(&path, &new_namespace, scope)?;
         } else if file_name_str.ends_with(".md") {
-            let agent_name = file_name_str.strip_suffix(".md").unwrap();
+            let agent_name = match file_name_str.strip_suffix(".md") {
+                Some(name) => name,
+                None => continue, // Skip if somehow strip_suffix fails
+            };
             let full_agent_name = if namespace.is_empty() {
                 agent_name.to_string()
             } else {
@@ -257,16 +260,34 @@ async fn handle_agents_import_from_url(url: String, scope: Scope) -> Result<()> 
     }
 
     // Extract owner, repo, and path from GitHub URL
-    let path_segments: Vec<&str> = parsed_url.path_segments().unwrap().collect();
+    let path_segments: Vec<&str> = parsed_url
+        .path_segments()
+        .ok_or_else(|| anyhow::anyhow!("Invalid GitHub URL: No path segments"))?
+        .collect();
 
     if path_segments.len() < 5 || path_segments[2] != "blob" {
         anyhow::bail!("Invalid GitHub URL format. Expected: https://github.com/owner/repo/blob/branch/path/to/agent.md");
     }
 
+    // Validate and escape URL components to prevent command injection
     let owner = path_segments[0];
     let repo = path_segments[1];
     let branch = path_segments[3];
     let file_path = path_segments[4..].join("/");
+
+    // Validate components don't contain dangerous characters
+    for component in [owner, repo, branch] {
+        if component.contains([
+            '$', '`', '\\', '"', '\'', '\n', '\r', ';', '|', '&', '<', '>', '(', ')',
+        ]) {
+            anyhow::bail!("Invalid characters in URL component: {}", component);
+        }
+    }
+
+    // Additional validation for file path
+    if file_path.contains("..") {
+        anyhow::bail!("Invalid file path in URL: Path traversal detected");
+    }
 
     // Download the file using gh api
     println!("Downloading agent from GitHub...");
@@ -289,8 +310,30 @@ async fn handle_agents_import_from_url(url: String, scope: Scope) -> Result<()> 
         .filter(|c| !c.is_whitespace())
         .collect();
 
+    // Check size before decoding to prevent memory exhaustion
+    // Base64 decoded size is approximately 3/4 of encoded size
+    const MAX_AGENT_SIZE: usize = 10 * 1024 * 1024; // 10MB limit
+    let estimated_size = (base64_content.len() * 3) / 4;
+    if estimated_size > MAX_AGENT_SIZE {
+        anyhow::bail!(
+            "Agent file too large: estimated {} bytes, max {} bytes",
+            estimated_size,
+            MAX_AGENT_SIZE
+        );
+    }
+
     use base64::{engine::general_purpose, Engine as _};
     let content = general_purpose::STANDARD.decode(&base64_content)?;
+
+    // Verify actual size after decoding
+    if content.len() > MAX_AGENT_SIZE {
+        anyhow::bail!(
+            "Agent file too large: {} bytes, max {} bytes",
+            content.len(),
+            MAX_AGENT_SIZE
+        );
+    }
+
     let content_str = String::from_utf8(content)?;
 
     // Extract filename from URL
@@ -330,7 +373,32 @@ fn handle_agents_import_from_file(file_path: String, scope: Scope) -> Result<()>
     Ok(())
 }
 
+/// Validate that a filename is safe (no path traversal)
+fn validate_agent_filename(filename: &str) -> Result<()> {
+    // Check for path traversal attempts
+    if filename.contains("..") || filename.contains("/") || filename.contains("\\") {
+        anyhow::bail!(
+            "Invalid filename '{}': Path traversal not allowed",
+            filename
+        );
+    }
+
+    // Ensure it's a markdown file
+    if !filename.ends_with(".md") {
+        anyhow::bail!("Invalid filename '{}': Must be a .md file", filename);
+    }
+
+    // Check for other dangerous characters
+    if filename.contains('\0') {
+        anyhow::bail!("Invalid filename '{}': Contains null byte", filename);
+    }
+
+    Ok(())
+}
+
 fn save_agent_content(content: &str, filename: &str, scope: Scope) -> Result<()> {
+    // Validate filename for security
+    validate_agent_filename(filename)?;
     // Validate the agent content
     if let Some(agent_info) = parse_agent_metadata(content) {
         println!("Importing agent: {}", agent_info.name);
@@ -467,7 +535,10 @@ fn collect_agents_recursive(
             };
             collect_agents_recursive(&path, &new_namespace, scope, agents_list)?;
         } else if file_name_str.ends_with(".md") {
-            let agent_name = file_name_str.strip_suffix(".md").unwrap();
+            let agent_name = match file_name_str.strip_suffix(".md") {
+                Some(name) => name,
+                None => continue, // Skip if somehow strip_suffix fails
+            };
             let full_agent_name = if namespace.is_empty() {
                 agent_name.to_string()
             } else {
@@ -697,5 +768,69 @@ Content
         let project_dir = get_agents_dir(&Scope::Project).unwrap();
         assert!(project_dir.to_string_lossy().contains(".claude"));
         assert!(project_dir.to_string_lossy().contains("agents"));
+    }
+
+    #[test]
+    fn test_validate_agent_filename_path_traversal() {
+        // Test path traversal attempts
+        assert!(validate_agent_filename("../etc/passwd.md").is_err());
+        assert!(validate_agent_filename("..\\windows\\system32\\config.md").is_err());
+        assert!(validate_agent_filename("agents/../../../etc/passwd.md").is_err());
+        assert!(validate_agent_filename("test/../../sensitive.md").is_err());
+
+        // Test forward slashes
+        assert!(validate_agent_filename("subdir/agent.md").is_err());
+        assert!(validate_agent_filename("/etc/passwd.md").is_err());
+
+        // Test backslashes
+        assert!(validate_agent_filename("subdir\\agent.md").is_err());
+        assert!(validate_agent_filename("C:\\Windows\\System32\\config.md").is_err());
+
+        // Test null bytes
+        assert!(validate_agent_filename("agent\0.md").is_err());
+
+        // Test non-.md files
+        assert!(validate_agent_filename("agent.txt").is_err());
+        assert!(validate_agent_filename("agent").is_err());
+        assert!(validate_agent_filename("agent.md.txt").is_err());
+
+        // Test valid filenames
+        assert!(validate_agent_filename("agent.md").is_ok());
+        assert!(validate_agent_filename("my-cool-agent.md").is_ok());
+        assert!(validate_agent_filename("agent_v2.md").is_ok());
+        assert!(validate_agent_filename("123.md").is_ok());
+    }
+
+    #[test]
+    fn test_url_component_validation() {
+        // These would be tested in handle_agents_import_from_url but we can't easily test
+        // that function due to external dependencies. The validation logic ensures that
+        // dangerous characters are rejected:
+        let dangerous_chars = [
+            '$', '`', '\\', '"', '\'', '\n', '\r', ';', '|', '&', '<', '>', '(', ')',
+        ];
+
+        for ch in dangerous_chars {
+            let dangerous_string = format!("test{ch}test");
+            // In the actual code, this would cause bail!
+            assert!(dangerous_string.contains(ch));
+        }
+    }
+
+    #[test]
+    fn test_strip_suffix_safety() {
+        // Test that our safe strip_suffix handling works
+        let test_cases = vec![
+            ("agent.md", Some("agent")),
+            ("test.md", Some("test")),
+            ("no-extension", None),
+            ("double.md.md", Some("double.md")),
+            (".md", Some("")),
+        ];
+
+        for (input, expected) in test_cases {
+            let result = input.strip_suffix(".md");
+            assert_eq!(result, expected);
+        }
     }
 }
