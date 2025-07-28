@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::process::{Command, Output, Stdio};
 
 /// Output from Claude CLI execution
@@ -128,7 +128,7 @@ pub fn ask_claude(prompt: &str) -> Result<String> {
     let output = ClaudeCli::new().print_mode().execute(prompt)?;
 
     if !output.success {
-        return Err(anyhow::anyhow!("Claude command failed: {}", output.stderr));
+        bail!("Claude command failed: {}", output.stderr);
     }
 
     Ok(output.stdout)
@@ -167,10 +167,7 @@ Make sure the agent is practical, well-defined, and follows Claude Code agent co
         .execute(&claude_prompt)?;
 
     if !output.success {
-        return Err(anyhow::anyhow!(
-            "Failed to generate agent: {}",
-            output.stderr
-        ));
+        bail!("Failed to generate agent: {}", output.stderr);
     }
 
     parse_filename_content(&output.stdout)
@@ -198,10 +195,7 @@ Focus on making the command reusable and clear in its purpose."#;
         .execute(&claude_prompt)?;
 
     if !output.success {
-        return Err(anyhow::anyhow!(
-            "Failed to generate command: {}",
-            output.stderr
-        ));
+        bail!("Failed to generate command: {}", output.stderr);
     }
 
     parse_filename_content(&output.stdout)
@@ -212,15 +206,13 @@ fn parse_filename_content(output: &str) -> Result<(String, String)> {
     let lines: Vec<&str> = output.lines().collect();
 
     if lines.is_empty() {
-        return Err(anyhow::anyhow!("No output from Claude"));
+        bail!("No output from Claude");
     }
 
     // Extract filename from first line
     let first_line = lines[0];
     if !first_line.starts_with("filename:") {
-        return Err(anyhow::anyhow!(
-            "Invalid output format. Expected 'filename:' on first line"
-        ));
+        bail!("Invalid output format. Expected 'filename:' on first line");
     }
 
     let filename = first_line

@@ -10,6 +10,11 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
+// Constants
+const SPINNER_DELAY_MS: u64 = 100;
+const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const MAX_GITHUB_FILE_SIZE: usize = 10 * 1024 * 1024; // 10MB
+
 #[derive(Debug)]
 struct AgentInfo {
     name: String,
@@ -20,6 +25,14 @@ struct AgentInfo {
     color: Option<String>,
 }
 
+/// Handle agent-related subcommands
+///
+/// This function processes all agent management operations including:
+/// - Listing agents from user/project scopes
+/// - Importing agents from files or GitHub
+/// - Deleting agents interactively
+/// - Cleaning up all agents in a scope
+/// - Generating new agents using Claude
 pub async fn handle_agents(cmd: AgentsSubcommand) -> Result<()> {
     match cmd {
         AgentsSubcommand::List { scope } => handle_agents_list(scope)?,
@@ -140,15 +153,20 @@ fn list_agents_recursive(dir: &std::path::Path, namespace: &str, scope: &Scope) 
                         Scope::Project => "(project)",
                     };
                     // Truncate long descriptions for display
-                    let description = if agent_info.description.len() > 80 {
-                        format!("{}...", &agent_info.description[..77])
+                    if agent_info.description.len() > 80 {
+                        println!(
+                            "  {} {} - {} [{}...]",
+                            full_agent_name,
+                            scope_label,
+                            agent_info.name,
+                            &agent_info.description[..77]
+                        );
                     } else {
-                        agent_info.description.clone()
-                    };
-                    println!(
-                        "  {} {} - {} [{}]",
-                        full_agent_name, scope_label, agent_info.name, description
-                    );
+                        println!(
+                            "  {} {} - {} [{}]",
+                            full_agent_name, scope_label, agent_info.name, agent_info.description
+                        );
+                    }
                 } else {
                     let scope_label = match scope {
                         Scope::User => "(user)",
@@ -336,13 +354,12 @@ async fn import_single_agent_from_github(path_segments: &[&str], scope: Scope) -
 
     // Check size before decoding to prevent memory exhaustion
     // Base64 decoded size is approximately 3/4 of encoded size
-    const MAX_AGENT_SIZE: usize = 10 * 1024 * 1024; // 10MB limit
     let estimated_size = (base64_content.len() * 3) / 4;
-    if estimated_size > MAX_AGENT_SIZE {
+    if estimated_size > MAX_GITHUB_FILE_SIZE {
         anyhow::bail!(
             "Agent file too large: estimated {} bytes, max {} bytes",
             estimated_size,
-            MAX_AGENT_SIZE
+            MAX_GITHUB_FILE_SIZE
         );
     }
 
@@ -350,11 +367,11 @@ async fn import_single_agent_from_github(path_segments: &[&str], scope: Scope) -
     let content = general_purpose::STANDARD.decode(&base64_content)?;
 
     // Verify actual size after decoding
-    if content.len() > MAX_AGENT_SIZE {
+    if content.len() > MAX_GITHUB_FILE_SIZE {
         anyhow::bail!(
             "Agent file too large: {} bytes, max {} bytes",
             content.len(),
-            MAX_AGENT_SIZE
+            MAX_GITHUB_FILE_SIZE
         );
     }
 
@@ -454,7 +471,7 @@ async fn import_agents_folder_from_github(path_segments: &[&str], scope: Scope) 
         match import_single_agent_from_github(&file_segments, scope.clone()).await {
             Ok(_) => imported_count += 1,
             Err(e) => {
-                eprintln!("Failed to import {file_name}: {e}");
+                eprintln!("error: failed to import {file_name}: {e}");
                 failed_count += 1;
             }
         }
@@ -540,7 +557,7 @@ fn save_agent_content(content: &str, filename: &str, scope: Scope) -> Result<()>
 
 fn handle_agents_delete(interactive: bool) -> Result<()> {
     if !interactive {
-        eprintln!("Error: Non-interactive mode is not supported yet");
+        eprintln!("error: non-interactive mode is not supported yet");
         return Ok(());
     }
 
@@ -802,12 +819,11 @@ You are a specialized agent for [describe specialization].
     let running_clone = running.clone();
 
     let spinner_handle = thread::spawn(move || {
-        let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
         let mut i = 0;
         while running_clone.load(Ordering::Relaxed) {
-            print!("\r{} ", spinner_chars[i % spinner_chars.len()]);
+            print!("\r{} ", SPINNER_CHARS[i % SPINNER_CHARS.len()]);
             let _ = io::stdout().flush();
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(SPINNER_DELAY_MS));
             i += 1;
         }
         print!("\r  \r");

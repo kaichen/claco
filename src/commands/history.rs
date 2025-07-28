@@ -6,10 +6,17 @@ use std::io::{BufRead, BufReader};
 
 use super::format_timestamp_local;
 
+/// Display history of user messages for the current project
+///
+/// Shows all user input messages from Claude Code sessions in the current directory.
+/// Can optionally filter by a specific session ID.
+///
+/// # Arguments
+/// * `session_id` - Optional session ID to filter messages
 pub fn handle_history(session_id: Option<String>) -> Result<()> {
     // Get current working directory
     let cwd = std::env::current_dir()?;
-    let cwd_str = cwd.to_string_lossy().to_string();
+    let cwd_str = cwd.to_string_lossy();
 
     let projects_dir = claude_home()?.join("projects");
 
@@ -21,7 +28,7 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
     // Find the project directory that matches the current working directory
     let mut matched_project_path = None;
 
-    for entry in fs::read_dir(&projects_dir)? {
+    'outer: for entry in fs::read_dir(&projects_dir)? {
         let entry = entry?;
         let path = entry.path();
 
@@ -40,8 +47,8 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
                     if let Some(Ok(first_line)) = reader.lines().next() {
                         if let Ok(entry) = serde_json::from_str::<SessionEntry>(&first_line) {
                             if entry.cwd == cwd_str {
-                                matched_project_path = Some(path.clone());
-                                break;
+                                matched_project_path = Some(path);
+                                break 'outer;
                             }
                         }
                     }
@@ -76,7 +83,7 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
             let file_name = match path.file_stem() {
                 Some(stem) => stem.to_string_lossy(),
                 None => {
-                    eprintln!("Warning: Could not get file stem from: {}", path.display());
+                    eprintln!("warning: could not get file stem from: {}", path.display());
                     continue;
                 }
             };

@@ -10,6 +10,19 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
+// Constants
+const SPINNER_DELAY_MS: u64 = 100;
+const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const MAX_GITHUB_FILE_SIZE: usize = 10 * 1024 * 1024; // 10MB
+
+/// Handle slash command-related subcommands
+///
+/// This function processes all slash command management operations including:
+/// - Listing commands from user/project scopes
+/// - Importing commands from GitHub URLs
+/// - Deleting commands interactively
+/// - Cleaning up all commands in a scope
+/// - Generating new commands using Claude
 pub async fn handle_commands(cmd: CommandsSubcommand) -> Result<()> {
     match cmd {
         CommandsSubcommand::List { scope } => handle_commands_list(scope)?,
@@ -257,13 +270,12 @@ async fn import_single_command_from_github(path_segments: &[&str], scope: Scope)
         .collect();
 
     // Check size before decoding to prevent memory exhaustion
-    const MAX_COMMAND_SIZE: usize = 10 * 1024 * 1024; // 10MB limit
     let estimated_size = (base64_content.len() * 3) / 4;
-    if estimated_size > MAX_COMMAND_SIZE {
+    if estimated_size > MAX_GITHUB_FILE_SIZE {
         anyhow::bail!(
             "Command file too large: estimated {} bytes, max {} bytes",
             estimated_size,
-            MAX_COMMAND_SIZE
+            MAX_GITHUB_FILE_SIZE
         );
     }
 
@@ -273,11 +285,11 @@ async fn import_single_command_from_github(path_segments: &[&str], scope: Scope)
         .map_err(|e| anyhow::anyhow!("Failed to decode base64 content: {}", e))?;
 
     // Verify actual size after decoding
-    if decoded.len() > MAX_COMMAND_SIZE {
+    if decoded.len() > MAX_GITHUB_FILE_SIZE {
         anyhow::bail!(
             "Command file too large: {} bytes, max {} bytes",
             decoded.len(),
-            MAX_COMMAND_SIZE
+            MAX_GITHUB_FILE_SIZE
         );
     }
 
@@ -388,7 +400,7 @@ async fn import_commands_folder_from_github(path_segments: &[&str], scope: Scope
         match import_single_command_from_github(&file_segments, scope.clone()).await {
             Ok(_) => imported_count += 1,
             Err(e) => {
-                eprintln!("Failed to import {file_name}: {e}");
+                eprintln!("error: failed to import {file_name}: {e}");
                 failed_count += 1;
             }
         }
@@ -465,7 +477,7 @@ fn count_commands_recursive(dir: &std::path::Path) -> Result<usize> {
 
 fn handle_commands_delete(interactive: bool) -> Result<()> {
     if !interactive {
-        eprintln!("Error: Non-interactive mode is not supported yet");
+        eprintln!("error: non-interactive mode is not supported yet");
         return Ok(());
     }
 
@@ -676,16 +688,15 @@ $ARGUMENTS
 
     // Spawn spinner thread
     let spinner_handle = thread::spawn(move || {
-        let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
         let mut i = 0;
 
         while running_clone.load(Ordering::Relaxed) {
             print!(
                 "\r{} Generating command...",
-                spinner_chars[i % spinner_chars.len()]
+                SPINNER_CHARS[i % SPINNER_CHARS.len()]
             );
             let _ = io::stdout().flush();
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(SPINNER_DELAY_MS));
             i += 1;
         }
 

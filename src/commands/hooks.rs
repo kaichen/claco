@@ -5,6 +5,12 @@ use claco::{
 };
 use std::io::{self, Write};
 
+/// Handle hook-related actions
+///
+/// This function processes all hook management operations including:
+/// - Listing hooks from user/project scopes
+/// - Adding new hooks with event patterns and commands
+/// - Deleting hooks interactively
 pub fn handle_hooks(action: HooksAction) -> Result<()> {
     match action {
         HooksAction::List { scope } => handle_hooks_list(scope),
@@ -26,7 +32,7 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
                 "user" => user_settings_path()?,
                 "project" => project_settings_path(),
                 _ => {
-                    eprintln!("Error: Invalid scope '{specific_scope}'. Use 'user' or 'project'");
+                    eprintln!("error: invalid scope '{specific_scope}' - use 'user' or 'project'");
                     return Ok(());
                 }
             };
@@ -145,7 +151,7 @@ fn handle_hooks_add(scope: String, event: String, matcher: String, command: Stri
         "user" => user_settings_path()?,
         "project" => project_settings_path(),
         _ => {
-            eprintln!("Error: Invalid scope '{scope}'. Use 'user' or 'project'");
+            eprintln!("error: invalid scope '{scope}' - use 'user' or 'project'");
             return Ok(());
         }
     };
@@ -160,7 +166,7 @@ fn handle_hooks_add(scope: String, event: String, matcher: String, command: Stri
         "PreCompact",
     ];
     if !valid_events.contains(&event.as_str()) {
-        eprintln!("Error: Invalid event '{event}'. Valid events are: {valid_events:?}");
+        eprintln!("error: invalid event '{event}' - valid events are: {valid_events:?}");
         return Ok(());
     }
 
@@ -213,7 +219,7 @@ fn handle_hooks_add(scope: String, event: String, matcher: String, command: Stri
 
 fn handle_hooks_delete(interactive: bool) -> Result<()> {
     if !interactive {
-        eprintln!("Error: Non-interactive mode is not supported yet");
+        eprintln!("error: non-interactive mode is not supported yet");
         return Ok(());
     }
 

@@ -5,6 +5,13 @@ use std::io::{BufRead, BufReader};
 
 use super::format_timestamp_local;
 
+/// Display information about a specific Claude Code session
+///
+/// Shows details about a session including the first user message and timestamp.
+/// If no session ID is provided, displays the most recent session.
+///
+/// # Arguments
+/// * `session_id` - Optional specific session ID to display
 pub fn handle_session(session_id: Option<String>) -> Result<()> {
     let projects_dir = claude_home()?.join("projects");
 

@@ -3,6 +3,12 @@ use claco::{claude_home, desanitize_project_path, SessionEntry};
 use std::fs;
 use std::io::{BufRead, BufReader};
 
+/// List all Claude Code projects with their sessions
+///
+/// Reads the ~/.claude/projects directory and displays:
+/// - Project paths (desanitized from directory names)
+/// - Associated session IDs for each project
+/// - Attempts to extract the actual cwd from session files
 pub fn handle_projects() -> Result<()> {
     let projects_dir = claude_home()?.join("projects");
 
@@ -29,7 +35,7 @@ pub fn handle_projects() -> Result<()> {
 
             if session_path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
                 if let Some(session_id) = session_path.file_stem() {
-                    sessions.push(session_id.to_string_lossy().to_string());
+                    sessions.push(session_id.to_string_lossy().into_owned());
                 }
 
                 // Try to read the actual cwd from the first line of this JSONL file
@@ -54,7 +60,7 @@ pub fn handle_projects() -> Result<()> {
                 Some(name) => desanitize_project_path(&name.to_string_lossy()),
                 None => {
                     eprintln!(
-                        "Warning: Could not get project name from path: {}",
+                        "warning: could not get project name from path: {}",
                         path.display()
                     );
                     continue;
