@@ -4,6 +4,8 @@
 
 `claco` (Claude Code Helper) is a CLI tool for boosting Claude Code productive.
 
+[中文说明](/README.zh.md)
+
 ## Installation
 
 On Linux/macOS:
