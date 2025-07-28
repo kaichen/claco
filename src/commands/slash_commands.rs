@@ -169,29 +169,233 @@ async fn handle_commands_import(url: String, scope: Scope) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Invalid GitHub URL: No path segments"))?
         .collect();
 
-    if path_segments.len() < 4 {
-        anyhow::bail!("Invalid GitHub URL format. Expected: https://github.com/owner/repo/blob/branch/path or https://github.com/owner/repo/tree/branch/path");
-    }
-
-    // Check if it's a tree (folder) or blob (file) URL
-    let url_type = path_segments.get(2).copied();
-
-    match url_type {
-        Some("blob") => {
-            if path_segments.len() < 5 {
-                anyhow::bail!("Invalid file URL format. Expected: https://github.com/owner/repo/blob/branch/path/to/command.md");
-            }
-            // Import single file
-            import_single_command_from_github(&path_segments, scope).await
+    // Handle different URL formats
+    match path_segments.len() {
+        // https://github.com/owner/repo format
+        2 => {
+            println!("Checking for .md files in repository root...");
+            // Import from repo root directory
+            import_commands_from_repo_url(path_segments[0], path_segments[1], None, "main", scope)
+                .await
         }
-        Some("tree") => {
-            // Import all .md files from folder
-            import_commands_folder_from_github(&path_segments, scope).await
+        // https://github.com/owner/repo with trailing slash or other formats
+        3 if path_segments[2].is_empty() => {
+            println!("Checking for .md files in repository root...");
+            // Import from repo root directory
+            import_commands_from_repo_url(path_segments[0], path_segments[1], None, "main", scope)
+                .await
+        }
+        // Standard blob/tree URLs
+        _ if path_segments.len() >= 4 => {
+            // Check if it's a tree (folder) or blob (file) URL
+            let url_type = path_segments.get(2).copied();
+
+            match url_type {
+                Some("blob") => {
+                    if path_segments.len() < 5 {
+                        anyhow::bail!("Invalid file URL format. Expected: https://github.com/owner/repo/blob/branch/path/to/command.md");
+                    }
+
+                    // Check if the last segment looks like a file or directory
+                    let last_segment = path_segments.last().unwrap();
+                    if !last_segment.ends_with(".md") {
+                        // This might be a directory shown as blob by GitHub
+                        // Try to list it first
+                        let owner = path_segments[0];
+                        let repo = path_segments[1];
+                        let branch = path_segments[3];
+                        let path = path_segments[4..].join("/");
+
+                        println!("Checking if URL points to a directory...");
+
+                        // Try to list the path as a directory
+                        let api_path = format!("repos/{owner}/{repo}/contents/{path}?ref={branch}");
+                        let check_output = Command::new("gh").args(["api", &api_path]).output()?;
+
+                        if check_output.status.success() {
+                            // Parse to check if it's an array (directory)
+                            let json_str = String::from_utf8(check_output.stdout)?;
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                                if json.is_array() {
+                                    // It's a directory, convert to tree URL
+                                    println!(
+                                        "URL points to a directory. Converting to tree URL..."
+                                    );
+                                    let mut tree_segments = path_segments.to_vec();
+                                    tree_segments[2] = "tree";
+                                    return import_commands_folder_from_github(
+                                        &tree_segments,
+                                        scope,
+                                    )
+                                    .await;
+                                }
+                            }
+                        }
+                    }
+
+                    // Import single file
+                    import_single_command_from_github(&path_segments, scope).await
+                }
+                Some("tree") => {
+                    // Import all .md files from folder
+                    import_commands_folder_from_github(&path_segments, scope).await
+                }
+                _ => {
+                    anyhow::bail!("Invalid GitHub URL format. URL must be either:\n  - https://github.com/owner/repo (imports from root)\n  - https://github.com/owner/repo/blob/branch/path/to/command.md (single file)\n  - https://github.com/owner/repo/tree/branch/path/to/folder (folder)");
+                }
+            }
         }
         _ => {
-            anyhow::bail!("Invalid GitHub URL format. URL must contain either 'blob' (for files) or 'tree' (for folders)");
+            anyhow::bail!("Invalid GitHub URL format. URL must be either:\n  - https://github.com/owner/repo (imports from root)\n  - https://github.com/owner/repo/blob/branch/path/to/command.md (single file)\n  - https://github.com/owner/repo/tree/branch/path/to/folder (folder)");
         }
     }
+}
+
+async fn import_commands_from_repo_url(
+    owner: &str,
+    repo: &str,
+    path: Option<&str>,
+    branch: &str,
+    scope: Scope,
+) -> Result<()> {
+    // Validate components don't contain dangerous characters
+    for component in [owner, repo, branch] {
+        if component.contains([
+            '$', '`', '\\', '"', '\'', '\n', '\r', ';', '|', '&', '<', '>', '(', ')',
+        ]) {
+            anyhow::bail!("Invalid characters in URL component: {}", component);
+        }
+    }
+
+    // List files in the repository root or specified path
+    let api_path = if let Some(folder_path) = path {
+        // Additional validation for folder path
+        if folder_path.contains("..") {
+            anyhow::bail!("Invalid folder path in URL: Path traversal detected");
+        }
+        format!("repos/{owner}/{repo}/contents/{folder_path}?ref={branch}")
+    } else {
+        format!("repos/{owner}/{repo}/contents?ref={branch}")
+    };
+
+    let output = Command::new("gh").args(["api", &api_path]).output()?;
+
+    if !output.status.success() {
+        let error = String::from_utf8_lossy(&output.stderr);
+        if error.contains("404") {
+            anyhow::bail!("Repository or path not found. Make sure the repository exists and you have access to it.");
+        }
+        anyhow::bail!("Failed to list repository contents: {}", error);
+    }
+
+    // Parse JSON response
+    let json_str = String::from_utf8(output.stdout)?;
+    let files: serde_json::Value = serde_json::from_str(&json_str)?;
+
+    // Common documentation files to exclude
+    const EXCLUDED_FILES: &[&str] = &[
+        "README.md",
+        "readme.md",
+        "Readme.md",
+        "CHANGELOG.md",
+        "changelog.md",
+        "Changelog.md",
+        "CONTRIBUTING.md",
+        "contributing.md",
+        "Contributing.md",
+        "LICENSE.md",
+        "license.md",
+        "License.md",
+        "CODE_OF_CONDUCT.md",
+        "code_of_conduct.md",
+        "SECURITY.md",
+        "security.md",
+        "Security.md",
+        "SUPPORT.md",
+        "support.md",
+        "Support.md",
+        "FUNDING.md",
+        "funding.md",
+        "Funding.md",
+        "PULL_REQUEST_TEMPLATE.md",
+        "pull_request_template.md",
+        "ISSUE_TEMPLATE.md",
+        "issue_template.md",
+    ];
+
+    // Filter for .md files, excluding common documentation files
+    let md_files: Vec<&serde_json::Value> = files
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("Expected JSON array response"))?
+        .iter()
+        .filter(|file| {
+            if file.get("type").and_then(|t| t.as_str()) != Some("file") {
+                return false;
+            }
+
+            if let Some(name) = file.get("name").and_then(|n| n.as_str()) {
+                // Check if it's a markdown file
+                if !name.ends_with(".md") {
+                    return false;
+                }
+
+                // Exclude common documentation files when importing from repo root
+                if path.is_none() && EXCLUDED_FILES.contains(&name) {
+                    return false;
+                }
+
+                true
+            } else {
+                false
+            }
+        })
+        .collect();
+
+    if md_files.is_empty() {
+        anyhow::bail!("No .md files found in the repository (excluding documentation files). Please check if the repository contains any command markdown files.");
+    }
+
+    println!("Found {} command file(s) to import", md_files.len());
+
+    let mut imported_count = 0;
+    let mut failed_count = 0;
+
+    // Import each .md file
+    for file in md_files {
+        let file_name = file
+            .get("name")
+            .and_then(|n| n.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing file name"))?;
+
+        let file_path = if let Some(folder_path) = path {
+            format!("{folder_path}/{file_name}")
+        } else {
+            file_name.to_string()
+        };
+
+        println!("Importing {file_name}...");
+
+        // Build the blob URL path segments for reusing existing import function
+        let mut file_segments = vec![owner, repo, "blob", branch];
+        file_segments.extend(file_path.split('/'));
+
+        match import_single_command_from_github(&file_segments, scope.clone()).await {
+            Ok(_) => imported_count += 1,
+            Err(e) => {
+                eprintln!("error: failed to import {file_name}: {e}");
+                failed_count += 1;
+            }
+        }
+    }
+
+    if failed_count > 0 {
+        println!("\n[OK] Imported {imported_count} command(s), {failed_count} failed");
+        anyhow::bail!("Some imports failed");
+    } else {
+        println!("\n[OK] Successfully imported {imported_count} command(s)");
+    }
+
+    Ok(())
 }
 
 async fn import_single_command_from_github(path_segments: &[&str], scope: Scope) -> Result<()> {
@@ -256,6 +460,9 @@ async fn import_single_command_from_github(path_segments: &[&str], scope: Scope)
 
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr);
+
+        // Note: Directory detection is now handled earlier in the flow
+
         anyhow::bail!("Failed to download file from GitHub: {}", error);
     }
 
