@@ -5,8 +5,15 @@ use std::io::{BufRead, BufReader};
 
 use super::format_timestamp_local;
 
+/// Display information about a specific Claude Code session
+///
+/// Shows details about a session including the first user message and timestamp.
+/// If no session ID is provided, displays the most recent session.
+///
+/// # Arguments
+/// * `session_id` - Optional specific session ID to display
 pub fn handle_session(session_id: Option<String>) -> Result<()> {
-    let projects_dir = claude_home().join("projects");
+    let projects_dir = claude_home()?.join("projects");
 
     if !projects_dir.exists() {
         println!("No Claude projects directory found");
@@ -92,18 +99,20 @@ pub fn handle_session(session_id: Option<String>) -> Result<()> {
                 let entry: SessionEntry = serde_json::from_str(&line)?;
 
                 if project_cwd.is_none() {
-                    project_cwd = Some(entry.cwd.clone());
+                    project_cwd = entry.cwd.clone();
                 }
 
                 if first_timestamp.is_none() {
-                    first_timestamp = Some(entry.timestamp.clone());
+                    first_timestamp = entry.timestamp.clone();
                 }
 
                 if entry.message_type == "user"
-                    && entry.user_type == "external"
+                    && entry.user_type.as_deref() == Some("external")
                     && first_user_message.is_none()
                 {
-                    first_user_message = Some(entry.message.content.clone());
+                    if let Some(ref message) = entry.message {
+                        first_user_message = Some(message.content.clone());
+                    }
                 }
             }
 

@@ -6,12 +6,19 @@ use std::io::{BufRead, BufReader};
 
 use super::format_timestamp_local;
 
+/// Display history of user messages for the current project
+///
+/// Shows all user input messages from Claude Code sessions in the current directory.
+/// Can optionally filter by a specific session ID.
+///
+/// # Arguments
+/// * `session_id` - Optional session ID to filter messages
 pub fn handle_history(session_id: Option<String>) -> Result<()> {
     // Get current working directory
     let cwd = std::env::current_dir()?;
-    let cwd_str = cwd.to_string_lossy().to_string();
+    let cwd_str = cwd.to_string_lossy();
 
-    let projects_dir = claude_home().join("projects");
+    let projects_dir = claude_home()?.join("projects");
 
     if !projects_dir.exists() {
         println!("No Claude projects directory found");
@@ -21,7 +28,7 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
     // Find the project directory that matches the current working directory
     let mut matched_project_path = None;
 
-    for entry in fs::read_dir(&projects_dir)? {
+    'outer: for entry in fs::read_dir(&projects_dir)? {
         let entry = entry?;
         let path = entry.path();
 
@@ -39,9 +46,11 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
                     let reader = BufReader::new(file);
                     if let Some(Ok(first_line)) = reader.lines().next() {
                         if let Ok(entry) = serde_json::from_str::<SessionEntry>(&first_line) {
-                            if entry.cwd == cwd_str {
-                                matched_project_path = Some(path.clone());
-                                break;
+                            if let Some(ref entry_cwd) = entry.cwd {
+                                if entry_cwd == &cwd_str {
+                                    matched_project_path = Some(path);
+                                    break 'outer;
+                                }
                             }
                         }
                     }
@@ -73,7 +82,13 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
         let path = entry.path();
 
         if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-            let file_name = path.file_stem().unwrap().to_string_lossy();
+            let file_name = match path.file_stem() {
+                Some(stem) => stem.to_string_lossy(),
+                None => {
+                    eprintln!("warning: could not get file stem from: {}", path.display());
+                    continue;
+                }
+            };
 
             // If session_id is specified, only process that session
             if let Some(ref sid) = session_id {
@@ -116,24 +131,24 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
                 // Now try to parse the user message
                 if let Ok(entry) = serde_json::from_str::<SessionEntry>(&line) {
                     // Check if the content contains a slash command
-                    if let Some(captures) = command_regex.captures(&entry.message.content) {
-                        // Print only the slash command
-                        if let Some(command) = captures.get(1) {
-                            println!(
-                                "{}: {}",
-                                format_timestamp_local(&entry.timestamp),
-                                command.as_str()
-                            );
-                            // Skip the next line after a slash command
-                            skip_next = true;
+                    if let (Some(ref message), Some(ref timestamp)) =
+                        (&entry.message, &entry.timestamp)
+                    {
+                        if let Some(captures) = command_regex.captures(&message.content) {
+                            // Print only the slash command
+                            if let Some(command) = captures.get(1) {
+                                println!(
+                                    "{}: {}",
+                                    format_timestamp_local(timestamp),
+                                    command.as_str()
+                                );
+                                // Skip the next line after a slash command
+                                skip_next = true;
+                            }
+                        } else {
+                            // No command-name tag found, print the full content
+                            println!("{}: {}", format_timestamp_local(timestamp), message.content);
                         }
-                    } else {
-                        // No command-name tag found, print the full content
-                        println!(
-                            "{}: {}",
-                            format_timestamp_local(&entry.timestamp),
-                            entry.message.content
-                        );
                     }
                 }
             }

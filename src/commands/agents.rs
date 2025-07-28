@@ -1,14 +1,19 @@
 use anyhow::Result;
-use claco::{claude_home, AgentsSubcommand, Scope};
+use claco::{claude_home, generate_agent, AgentsSubcommand, Scope};
 use std::fs;
 use std::io::{self, Write};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
 use std::thread;
 use std::time::Duration;
+
+// Constants
+const SPINNER_DELAY_MS: u64 = 100;
+const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const MAX_GITHUB_FILE_SIZE: usize = 10 * 1024 * 1024; // 10MB
 
 #[derive(Debug)]
 struct AgentInfo {
@@ -20,20 +25,30 @@ struct AgentInfo {
     color: Option<String>,
 }
 
+/// Handle agent-related subcommands
+///
+/// This function processes all agent management operations including:
+/// - Listing agents from user/project scopes
+/// - Importing agents from files or GitHub
+/// - Deleting agents interactively
+/// - Cleaning up all agents in a scope
+/// - Generating new agents using Claude
 pub async fn handle_agents(cmd: AgentsSubcommand) -> Result<()> {
     match cmd {
         AgentsSubcommand::List { scope } => handle_agents_list(scope)?,
         AgentsSubcommand::Import { source, scope } => handle_agents_import(source, scope).await?,
         AgentsSubcommand::Delete { interactive } => handle_agents_delete(interactive)?,
         AgentsSubcommand::Clean { scope } => handle_agents_clean(scope)?,
-        AgentsSubcommand::Generate { prompt } => handle_agents_generate(prompt)?,
+        AgentsSubcommand::Generate { prompt, template } => {
+            handle_agents_generate(prompt, template)?
+        }
     }
     Ok(())
 }
 
 fn get_agents_dir(scope: &Scope) -> Result<std::path::PathBuf> {
     match scope {
-        Scope::User => Ok(claude_home().join("agents")),
+        Scope::User => Ok(claude_home()?.join("agents")),
         Scope::Project => {
             let cwd = std::env::current_dir()?;
             Ok(cwd.join(".claude").join("agents"))
@@ -138,21 +153,26 @@ fn list_agents_recursive(dir: &std::path::Path, namespace: &str, scope: &Scope) 
                         Scope::Project => "(project)",
                     };
                     // Truncate long descriptions for display
-                    let description = if agent_info.description.len() > 80 {
-                        format!("{}...", &agent_info.description[..77])
+                    if agent_info.description.len() > 80 {
+                        println!(
+                            "  {} {} - {} [{}...]",
+                            full_agent_name,
+                            scope_label,
+                            agent_info.name,
+                            &agent_info.description[..77]
+                        );
                     } else {
-                        agent_info.description.clone()
-                    };
-                    println!(
-                        "- {} {} - {} [{}]",
-                        full_agent_name, scope_label, agent_info.name, description
-                    );
+                        println!(
+                            "  {} {} - {} [{}]",
+                            full_agent_name, scope_label, agent_info.name, agent_info.description
+                        );
+                    }
                 } else {
                     let scope_label = match scope {
                         Scope::User => "(user)",
                         Scope::Project => "(project)",
                     };
-                    println!("- {full_agent_name} {scope_label} - (no metadata)");
+                    println!("  {full_agent_name} {scope_label} - (no metadata)");
                 }
             }
         }
@@ -334,13 +354,12 @@ async fn import_single_agent_from_github(path_segments: &[&str], scope: Scope) -
 
     // Check size before decoding to prevent memory exhaustion
     // Base64 decoded size is approximately 3/4 of encoded size
-    const MAX_AGENT_SIZE: usize = 10 * 1024 * 1024; // 10MB limit
     let estimated_size = (base64_content.len() * 3) / 4;
-    if estimated_size > MAX_AGENT_SIZE {
+    if estimated_size > MAX_GITHUB_FILE_SIZE {
         anyhow::bail!(
             "Agent file too large: estimated {} bytes, max {} bytes",
             estimated_size,
-            MAX_AGENT_SIZE
+            MAX_GITHUB_FILE_SIZE
         );
     }
 
@@ -348,11 +367,11 @@ async fn import_single_agent_from_github(path_segments: &[&str], scope: Scope) -
     let content = general_purpose::STANDARD.decode(&base64_content)?;
 
     // Verify actual size after decoding
-    if content.len() > MAX_AGENT_SIZE {
+    if content.len() > MAX_GITHUB_FILE_SIZE {
         anyhow::bail!(
             "Agent file too large: {} bytes, max {} bytes",
             content.len(),
-            MAX_AGENT_SIZE
+            MAX_GITHUB_FILE_SIZE
         );
     }
 
@@ -452,17 +471,17 @@ async fn import_agents_folder_from_github(path_segments: &[&str], scope: Scope) 
         match import_single_agent_from_github(&file_segments, scope.clone()).await {
             Ok(_) => imported_count += 1,
             Err(e) => {
-                eprintln!("Failed to import {file_name}: {e}");
+                eprintln!("error: failed to import {file_name}: {e}");
                 failed_count += 1;
             }
         }
     }
 
     if failed_count > 0 {
-        println!("\n✓ Imported {imported_count} agent(s), {failed_count} failed");
+        println!("\n[OK] Imported {imported_count} agent(s), {failed_count} failed");
         anyhow::bail!("Some imports failed");
     } else {
-        println!("\n✓ Successfully imported {imported_count} agent(s)");
+        println!("\n[OK] Successfully imported {imported_count} agent(s)");
     }
 
     Ok(())
@@ -531,14 +550,14 @@ fn save_agent_content(content: &str, filename: &str, scope: Scope) -> Result<()>
     let agent_path = agents_dir.join(filename);
     fs::write(&agent_path, content)?;
 
-    println!("✓ Imported {}", filename.trim_end_matches(".md"));
+    println!("[OK] Imported {}", filename.trim_end_matches(".md"));
 
     Ok(())
 }
 
 fn handle_agents_delete(interactive: bool) -> Result<()> {
     if !interactive {
-        eprintln!("Error: Non-interactive mode is not supported yet");
+        eprintln!("error: non-interactive mode is not supported yet");
         return Ok(());
     }
 
@@ -694,7 +713,7 @@ fn handle_agents_clean(scope: Scope) -> Result<()> {
 
     // Remove the entire agents directory
     fs::remove_dir_all(&agents_dir)?;
-    println!("✓ Removed {agent_count} agent(s)");
+    println!("[OK] Removed {agent_count} agent(s)");
 
     Ok(())
 }
@@ -713,89 +732,136 @@ fn count_files_in_dir(dir: &std::path::Path) -> Result<usize> {
     Ok(count)
 }
 
-fn handle_agents_generate(prompt: String) -> Result<()> {
+fn handle_agents_generate(prompt: String, template: bool) -> Result<()> {
+    if template {
+        // Generate template markdown for agent
+        let template_content = r#"---
+name: agent-name
+description: Brief description of when to use this agent
+---
+
+# Agent Instructions
+
+You are a specialized agent for [describe specialization].
+
+## Core Responsibilities
+
+[Describe what this agent does and when to use it]
+
+## Approach
+
+[Describe how this agent handles tasks]
+"#;
+
+        let filename = if prompt.is_empty() {
+            "agent-template.md".to_string()
+        } else {
+            // Sanitize the prompt to create a filename
+            let sanitized = prompt
+                .to_lowercase()
+                .chars()
+                .map(|c| {
+                    if c.is_alphanumeric() || c == '-' {
+                        c
+                    } else {
+                        '-'
+                    }
+                })
+                .collect::<String>()
+                .split('-')
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join("-");
+            format!("{sanitized}.md")
+        };
+
+        // Get the project agents directory
+        let agents_dir = get_agents_dir(&Scope::Project)?;
+        fs::create_dir_all(&agents_dir)?;
+
+        let output_path = agents_dir.join(&filename);
+
+        // Check if file already exists
+        if output_path.exists() {
+            print!(
+                "File {} already exists. Overwrite? (y/N): ",
+                output_path.display()
+            );
+            io::stdout().flush()?;
+
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+
+            if input.trim().to_lowercase() != "y" {
+                println!("Operation cancelled");
+                return Ok(());
+            }
+        }
+
+        // Write the template
+        fs::write(&output_path, template_content)?;
+
+        println!("[OK] Created agent template: {}", output_path.display());
+        println!("\nNext steps:");
+        println!("  1. Edit the file to customize your agent");
+        println!("  2. Update the 'name' and 'description' fields");
+        println!("  3. Configure tools and other properties as needed");
+        println!("  4. Replace placeholder content with agent instructions");
+        println!("  5. Test it by using the agent in Claude Code");
+
+        return Ok(());
+    }
+
     println!("Launching Claude to generate agent...");
-
-    // System prompt for agent generation
-    let system_prompt = r#"You are an agent generator for Claude Code. Generate markdown files for custom agents following this format:
-
-STRUCTURE:
-- Store in .claude/agents/ directory
-- Filename: agent-name.md (descriptive name)
-- Required YAML frontmatter with:
-  - name: descriptive-name-of-agent
-  - description: Brief description of when to use this agent
-  - tools: (optional) Comma-separated list of tools like Read, Edit, Bash
-  - color: (optional) Color for the agent display
-
-CONTENT:
-- Clear instructions for the agent's specialized behavior
-- Define the agent's expertise and approach
-- Include specific guidelines and best practices
-- Use second person ("You are...") for instructions
-
-EXAMPLE:
-```markdown
----
-name: security-analyst
-description: Security vulnerability analysis, threat modeling, and security best practices recommendations
-tools: Read, Grep, Edit
-color: red
----
-
-You are a security specialist focused on identifying vulnerabilities and recommending secure coding practices.
-
-When analyzing code:
-- Check for common vulnerabilities (SQL injection, XSS, CSRF, etc.)
-- Review authentication and authorization implementations
-- Identify potential data exposure risks
-- Suggest security improvements following OWASP guidelines
-
-Always explain the severity and potential impact of identified issues.
-```
-
-Generate specialized, practical agents that provide clear value for specific tasks."#;
-
-    let claude_prompt = format!("Generate a custom agent markdown for: {prompt}\n\nProvide the complete markdown content including filename suggestion.");
 
     // Set up spinner
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone();
 
     let spinner_handle = thread::spawn(move || {
-        let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
         let mut i = 0;
         while running_clone.load(Ordering::Relaxed) {
-            print!("\r{} ", spinner_chars[i % spinner_chars.len()]);
-            io::stdout().flush().unwrap();
-            thread::sleep(Duration::from_millis(100));
+            print!("\r{} ", SPINNER_CHARS[i % SPINNER_CHARS.len()]);
+            let _ = io::stdout().flush();
+            thread::sleep(Duration::from_millis(SPINNER_DELAY_MS));
             i += 1;
         }
         print!("\r  \r");
-        io::stdout().flush().unwrap();
+        let _ = io::stdout().flush();
     });
 
-    // Launch Claude with the prompt
-    let mut cmd = Command::new("claude");
-    cmd.arg("--no-color")
-        .arg("--system")
-        .arg(system_prompt)
-        .arg(&claude_prompt)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
-
-    let status = cmd.status()?;
+    // Use the new wrapper to generate agent
+    let result = generate_agent(&prompt);
 
     // Stop the spinner
     running.store(false, Ordering::Relaxed);
-    spinner_handle.join().unwrap();
+    let _ = spinner_handle.join();
 
-    if !status.success() {
-        println!("Failed to launch Claude CLI. Make sure 'claude' is installed and in your PATH.");
-    } else {
-        println!("✓ Agent generation completed");
+    let (filename, content) = match result {
+        Ok((f, c)) => (f, c),
+        Err(e) => {
+            println!("Failed to generate agent: {e}");
+            return Ok(());
+        }
+    };
+
+    // Validate filename
+    if filename.is_empty() || !filename.ends_with(".md") {
+        println!("Error: Invalid filename: {filename}");
+        return Ok(());
     }
+
+    // Content is already extracted by the wrapper
+
+    // Get the agents directory
+    let agents_dir = get_agents_dir(&Scope::Project)?;
+    fs::create_dir_all(&agents_dir)?;
+
+    // Write the file
+    let output_path = agents_dir.join(filename);
+    fs::write(&output_path, content)?;
+
+    println!("[OK] Created agent: {}", output_path.display());
 
     Ok(())
 }

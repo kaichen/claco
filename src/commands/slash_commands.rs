@@ -1,8 +1,8 @@
 use anyhow::Result;
-use claco::{claude_home, CommandsSubcommand, Scope};
+use claco::{claude_home, generate_command, CommandsSubcommand, Scope};
 use std::fs;
 use std::io::{self, Write};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -10,12 +10,27 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
+// Constants
+const SPINNER_DELAY_MS: u64 = 100;
+const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const MAX_GITHUB_FILE_SIZE: usize = 10 * 1024 * 1024; // 10MB
+
+/// Handle slash command-related subcommands
+///
+/// This function processes all slash command management operations including:
+/// - Listing commands from user/project scopes
+/// - Importing commands from GitHub URLs
+/// - Deleting commands interactively
+/// - Cleaning up all commands in a scope
+/// - Generating new commands using Claude
 pub async fn handle_commands(cmd: CommandsSubcommand) -> Result<()> {
     match cmd {
         CommandsSubcommand::List { scope } => handle_commands_list(scope)?,
         CommandsSubcommand::Import { url, scope } => handle_commands_import(url, scope).await?,
         CommandsSubcommand::Clean { scope } => handle_commands_clean(scope)?,
-        CommandsSubcommand::Generate { prompt } => handle_commands_generate(prompt)?,
+        CommandsSubcommand::Generate { prompt, template } => {
+            handle_commands_generate(prompt, template)?
+        }
         CommandsSubcommand::Delete { interactive } => handle_commands_delete(interactive)?,
     }
     Ok(())
@@ -23,7 +38,7 @@ pub async fn handle_commands(cmd: CommandsSubcommand) -> Result<()> {
 
 fn get_commands_dir(scope: &Scope) -> Result<std::path::PathBuf> {
     match scope {
-        Scope::User => Ok(claude_home().join("commands")),
+        Scope::User => Ok(claude_home()?.join("commands")),
         Scope::Project => {
             let cwd = std::env::current_dir()?;
             Ok(cwd.join(".claude").join("commands"))
@@ -255,13 +270,12 @@ async fn import_single_command_from_github(path_segments: &[&str], scope: Scope)
         .collect();
 
     // Check size before decoding to prevent memory exhaustion
-    const MAX_COMMAND_SIZE: usize = 10 * 1024 * 1024; // 10MB limit
     let estimated_size = (base64_content.len() * 3) / 4;
-    if estimated_size > MAX_COMMAND_SIZE {
+    if estimated_size > MAX_GITHUB_FILE_SIZE {
         anyhow::bail!(
             "Command file too large: estimated {} bytes, max {} bytes",
             estimated_size,
-            MAX_COMMAND_SIZE
+            MAX_GITHUB_FILE_SIZE
         );
     }
 
@@ -271,11 +285,11 @@ async fn import_single_command_from_github(path_segments: &[&str], scope: Scope)
         .map_err(|e| anyhow::anyhow!("Failed to decode base64 content: {}", e))?;
 
     // Verify actual size after decoding
-    if decoded.len() > MAX_COMMAND_SIZE {
+    if decoded.len() > MAX_GITHUB_FILE_SIZE {
         anyhow::bail!(
             "Command file too large: {} bytes, max {} bytes",
             decoded.len(),
-            MAX_COMMAND_SIZE
+            MAX_GITHUB_FILE_SIZE
         );
     }
 
@@ -292,7 +306,7 @@ async fn import_single_command_from_github(path_segments: &[&str], scope: Scope)
     };
 
     println!(
-        "✓ Imported command '{}' from GitHub to {} scope: {}",
+        "[OK] Imported command '{}' from GitHub to {} scope: {}",
         filename.trim_end_matches(".md"),
         scope_label,
         output_path.display()
@@ -386,13 +400,13 @@ async fn import_commands_folder_from_github(path_segments: &[&str], scope: Scope
         match import_single_command_from_github(&file_segments, scope.clone()).await {
             Ok(_) => imported_count += 1,
             Err(e) => {
-                eprintln!("Failed to import {file_name}: {e}");
+                eprintln!("error: failed to import {file_name}: {e}");
                 failed_count += 1;
             }
         }
     }
 
-    println!("\n✓ Import complete: {imported_count} succeeded, {failed_count} failed");
+    println!("\n[OK] Import complete: {imported_count} succeeded, {failed_count} failed");
 
     if failed_count > 0 {
         anyhow::bail!("Some imports failed");
@@ -463,7 +477,7 @@ fn count_commands_recursive(dir: &std::path::Path) -> Result<usize> {
 
 fn handle_commands_delete(interactive: bool) -> Result<()> {
     if !interactive {
-        eprintln!("Error: Non-interactive mode is not supported yet");
+        eprintln!("error: non-interactive mode is not supported yet");
         return Ok(());
     }
 
@@ -585,44 +599,88 @@ fn collect_commands_recursive(
     Ok(())
 }
 
-fn handle_commands_generate(prompt: String) -> Result<()> {
+fn handle_commands_generate(prompt: String, template: bool) -> Result<()> {
+    if template {
+        // Generate template markdown
+        let template_content = r#"---
+description: Brief description of what this command does
+tools: Read, Edit, Bash
+---
+
+# Command Name
+
+Describe what this command does here.
+
+## Instructions
+
+$ARGUMENTS
+
+## Example Usage
+
+- Use $ARGUMENTS for command arguments
+- Use @filepath to include file contents  
+- Use !`command` to execute shell commands
+"#;
+
+        let filename = if prompt.is_empty() {
+            "command-template.md".to_string()
+        } else {
+            // Sanitize the prompt to create a filename
+            let sanitized = prompt
+                .to_lowercase()
+                .chars()
+                .map(|c| {
+                    if c.is_alphanumeric() || c == '-' {
+                        c
+                    } else {
+                        '-'
+                    }
+                })
+                .collect::<String>()
+                .split('-')
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join("-");
+            format!("{sanitized}.md")
+        };
+
+        // Get the project commands directory
+        let commands_dir = get_commands_dir(&Scope::Project)?;
+        fs::create_dir_all(&commands_dir)?;
+
+        let output_path = commands_dir.join(&filename);
+
+        // Check if file already exists
+        if output_path.exists() {
+            print!(
+                "File {} already exists. Overwrite? (y/N): ",
+                output_path.display()
+            );
+            io::stdout().flush()?;
+
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+
+            if input.trim().to_lowercase() != "y" {
+                println!("Operation cancelled");
+                return Ok(());
+            }
+        }
+
+        // Write the template
+        fs::write(&output_path, template_content)?;
+
+        println!("[OK] Created command template: {}", output_path.display());
+        println!("\nNext steps:");
+        println!("  1. Edit the file to customize your command");
+        println!("  2. Update the frontmatter properties");
+        println!("  3. Replace placeholder content with actual instructions");
+        println!("  4. Test it with: /{}", filename.trim_end_matches(".md"));
+
+        return Ok(());
+    }
+
     println!("Launching Claude to generate command...");
-
-    // Compact system prompt for slash command generation
-    let system_prompt = r#"You are a slash command generator for Claude Code. Generate markdown files for custom slash commands following this format:
-
-STRUCTURE:Organize commands in subdirectories. 
-- Folder: command comes from the project directory (.claude/commands).
-- Filename: command-name.md (becomes /command-name)
-- Optional YAML frontmatter with:
-  - description: Brief command description
-  - tools: (optional) Comma-separated list of tools like Read, Write, Edit, Bash
-- Main content: Clear prompt instructions
-
-FEATURES:
-- Use $ARGUMENTS for dynamic values
-- Use !`bash command` to execute commands and include output
-- Use @filepath to reference file contents
-- Commands can be namespaced in subdirectories (e.g., frontend/component.md becomes /frontend:component)
-
-EXAMPLE:
-```markdown
----
-description: Review code for issues
-tools: Read, Grep
----
-
-Review the following code for potential issues:
-@$ARGUMENTS
-
-Focus on performance, security, and best practices.
-
-Use Write tool to write down the result to markdown file.
-```
-
-Generate concise, practical commands that follow these conventions."#;
-
-    let claude_prompt = format!("Generate a slash command markdown in this project for: {prompt}\n\nProvide the complete markdown content including filename suggestion.");
 
     // Set up spinner
     let running = Arc::new(AtomicBool::new(true));
@@ -630,47 +688,55 @@ Generate concise, practical commands that follow these conventions."#;
 
     // Spawn spinner thread
     let spinner_handle = thread::spawn(move || {
-        let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
         let mut i = 0;
 
         while running_clone.load(Ordering::Relaxed) {
             print!(
                 "\r{} Generating command...",
-                spinner_chars[i % spinner_chars.len()]
+                SPINNER_CHARS[i % SPINNER_CHARS.len()]
             );
-            io::stdout().flush().unwrap();
-            thread::sleep(Duration::from_millis(100));
+            let _ = io::stdout().flush();
+            thread::sleep(Duration::from_millis(SPINNER_DELAY_MS));
             i += 1;
         }
 
         // Clear the spinner line
         print!("\r                                        \r");
-        io::stdout().flush().unwrap();
+        let _ = io::stdout().flush();
     });
 
-    // Run the command
-    let mut cmd = Command::new("claude");
-    cmd.arg("-p")
-        .arg("--allowedTools")
-        .arg("Edit,Read,Write")
-        .arg("--append-system-prompt")
-        .arg(system_prompt)
-        .arg(&claude_prompt)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
-
-    let status = cmd.status()?;
+    // Use the new wrapper to generate command
+    let result = generate_command(&prompt);
 
     // Stop the spinner
     running.store(false, Ordering::Relaxed);
-    spinner_handle.join().unwrap();
+    let _ = spinner_handle.join();
 
-    if !status.success() {
-        println!("Failed to launch Claude CLI. Make sure 'claude' is installed and in your PATH.");
-    } else {
-        println!("✓ Command generation completed");
+    let (filename, content) = match result {
+        Ok((f, c)) => (f, c),
+        Err(e) => {
+            println!("Failed to generate command: {e}");
+            return Ok(());
+        }
+    };
+
+    // Validate filename
+    if filename.is_empty() || !filename.ends_with(".md") {
+        println!("Error: Invalid filename: {filename}");
+        return Ok(());
     }
+
+    // Content is already extracted by the wrapper
+
+    // Get the commands directory
+    let commands_dir = get_commands_dir(&Scope::Project)?;
+    fs::create_dir_all(&commands_dir)?;
+
+    // Write the file
+    let output_path = commands_dir.join(filename);
+    fs::write(&output_path, content)?;
+
+    println!("[OK] Created command: {}", output_path.display());
 
     Ok(())
 }

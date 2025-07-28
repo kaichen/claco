@@ -24,7 +24,7 @@ On Linux/macOS:
 - **session**: Shows session info including first user message and timestamp
 - **projects**: Lists all projects with their session IDs
 
-Manage Custom Agents
+Manage Custom Sub Agents
 
 ```bash
 # List all custom agents
@@ -33,17 +33,11 @@ claco agents list
 claco agents import https://github.com/owner/repo/blob/main/agent.md --scope user
 # Import agent from local file
 claco agents import ../my-agent.md --scope project
-# Generate new agent using Claude
+# Generate new agent using Claude (or use 'gen' shortcut)
 claco agents generate "Create a security analyst agent"
-```
-
-Manage Hooks
-
-```bash
-# List all claude code hooks
-claco hooks list
-# Add stop sound notification
-claco hooks add --scope=user --event=Stop --command="afplay /System/Library/Sounds/Glass.aiff
+claco agents gen "Create a security analyst agent"
+# Generate agent template with all properties
+claco agents gen "my-agent" --template
 ```
 
 Manage Slash Commands
@@ -53,8 +47,20 @@ Manage Slash Commands
 claco commands list
 # Import command from github repo
 claco commands import https://github.com/amantus-ai/vibetunnel/blob/main/.claude/commands/review-pr.md
-# Generate command via claude code cli
+# Generate command via claude code cli (or use 'gen' shortcut)
 claco commands generate "Checkout yesterday's pull request and generate report"
+claco commands gen "Checkout yesterday's pull request and generate report"
+# Generate command template with all frontmatter properties
+claco commands gen "my-command" --template
+```
+
+Manage Hooks
+
+```bash
+# List all claude code hooks
+claco hooks list
+# Add stop sound notification
+claco hooks add --scope=user --event=Stop --command="afplay /System/Library/Sounds/Glass.aiff
 ```
 
 List user messages in current project
