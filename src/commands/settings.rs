@@ -1,11 +1,52 @@
 use anyhow::{anyhow, Context, Result};
 use claco::claude::{
-    load_settings, project_settings_path, save_settings, user_settings_path, Settings,
+    load_settings, project_local_settings_path, project_settings_path, save_settings,
+    user_settings_path, Settings,
 };
 use claco::cli::{Scope, SettingsSubcommand};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+
+/// Format JSON parsing errors with line/column information
+fn format_json_error(err: &serde_json::Error, content: &str) -> String {
+    let line_num = err.line();
+    let col_num = err.column();
+
+    // Line and column numbers are 1-based and always available for parsing errors
+    if line_num > 0 {
+        let lines: Vec<&str> = content.lines().collect();
+        let mut error_msg =
+            format!("JSON parsing error at line {line_num}, column {col_num}: {err}");
+
+        // Show the problematic line with context
+        if line_num <= lines.len() {
+            error_msg.push_str("\n\n");
+
+            // Show previous line if available
+            if line_num > 1 {
+                error_msg.push_str(&format!("{:4}: {}\n", line_num - 1, lines[line_num - 2]));
+            }
+
+            // Show the error line
+            error_msg.push_str(&format!("{:4}: {}\n", line_num, lines[line_num - 1]));
+
+            // Show pointer to the error column
+            if col_num > 0 {
+                error_msg.push_str(&format!("      {}^\n", " ".repeat(col_num - 1)));
+            }
+
+            // Show next line if available
+            if line_num < lines.len() {
+                error_msg.push_str(&format!("{:4}: {}\n", line_num + 1, lines[line_num]));
+            }
+        }
+
+        error_msg
+    } else {
+        format!("JSON parsing error: {err}")
+    }
+}
 
 /// Handle the settings subcommand
 pub async fn handle_settings(cmd: SettingsSubcommand) -> Result<()> {
@@ -27,6 +68,7 @@ async fn apply_settings(source: &str, scope: Scope, overwrite: bool) -> Result<(
     let target_path = match scope {
         Scope::User => user_settings_path()?,
         Scope::Project => project_settings_path(),
+        Scope::ProjectLocal => project_local_settings_path(),
     };
 
     // Load existing settings
@@ -47,6 +89,7 @@ async fn apply_settings(source: &str, scope: Scope, overwrite: bool) -> Result<(
         match scope {
             Scope::User => "user",
             Scope::Project => "project",
+            Scope::ProjectLocal => "project.local",
         }
     );
 
@@ -94,8 +137,15 @@ async fn load_from_github_url(url: &str) -> Result<Settings> {
         .context("Failed to read response body")?;
 
     // Parse the JSON content
-    serde_json::from_str::<Settings>(&content)
-        .with_context(|| format!("Failed to parse settings JSON from GitHub URL: {url}"))
+    match serde_json::from_str::<Settings>(&content) {
+        Ok(settings) => Ok(settings),
+        Err(e) => {
+            let error_msg = format_json_error(&e, &content);
+            Err(anyhow!(
+                "Failed to parse settings JSON from GitHub URL: {url}\n{error_msg}"
+            ))
+        }
+    }
 }
 
 /// Convert a GitHub URL to raw content URL
@@ -151,12 +201,17 @@ fn load_from_local_file(path: &str) -> Result<Settings> {
     let content = fs::read_to_string(&canonical_path)
         .with_context(|| format!("Failed to read settings file: {}", canonical_path.display()))?;
 
-    serde_json::from_str::<Settings>(&content).with_context(|| {
-        format!(
-            "Failed to parse settings JSON from file: {}",
-            canonical_path.display()
-        )
-    })
+    match serde_json::from_str::<Settings>(&content) {
+        Ok(settings) => Ok(settings),
+        Err(e) => {
+            let error_msg = format_json_error(&e, &content);
+            Err(anyhow!(
+                "Failed to parse settings JSON from file: {}\n{}",
+                canonical_path.display(),
+                error_msg
+            ))
+        }
+    }
 }
 
 /// Merge source settings into target settings
@@ -202,7 +257,7 @@ fn check_for_conflicts(target: &Settings, source: &Settings) -> Result<()> {
     if let (Some(target_hooks), Some(source_hooks)) = (&target.hooks, &source.hooks) {
         for event in source_hooks.keys() {
             if target_hooks.contains_key(event) {
-                conflicts.push(format!("Hook event: {event}"));
+                conflicts.push(format!("$.hooks.{event}"));
             }
         }
     }
@@ -210,13 +265,15 @@ fn check_for_conflicts(target: &Settings, source: &Settings) -> Result<()> {
     // Check for conflicting other fields
     for key in source.other.keys() {
         if target.other.contains_key(key) {
-            conflicts.push(format!("Setting: {key}"));
+            // Build JSONPath for the key
+            let jsonpath = format!("$.{key}");
+            conflicts.push(jsonpath);
         }
     }
 
     if !conflicts.is_empty() {
         return Err(anyhow!(
-            "Conflicts detected in the following settings:\n{}\n\nUse --overwrite to replace existing settings",
+            "Conflicts detected at the following paths:\n{}\n\nUse --overwrite to replace existing settings",
             conflicts.join("\n")
         ));
     }

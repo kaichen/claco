@@ -98,19 +98,11 @@ pub enum CommandsSubcommand {
         #[arg(long, value_enum, default_value = "project")]
         scope: Scope,
     },
-    /// Generate command from prompt via Claude Code itself
+    /// Generate a command template
     #[command(alias = "gen")]
     Generate {
-        /// The prompt to generate a command from (or filename for --template)
-        prompt: String,
-        /// Generate a template markdown file with all frontmatter properties
-        #[arg(
-            short,
-            long,
-            default_value = "false",
-            help = "Create a template with all available frontmatter properties and examples"
-        )]
-        template: bool,
+        /// The filename for the template (optional, defaults to command-template.md)
+        filename: Option<String>,
     },
     /// Delete commands interactively
     Delete {
@@ -124,6 +116,8 @@ pub enum CommandsSubcommand {
 pub enum Scope {
     User,
     Project,
+    #[value(name = "project.local")]
+    ProjectLocal,
 }
 
 #[derive(Subcommand)]
@@ -169,18 +163,10 @@ pub enum AgentsSubcommand {
         #[arg(long, value_enum, default_value = "project")]
         scope: Scope,
     },
-    /// Generate agent from prompt via Claude Code
+    /// Generate an agent template
     #[command(alias = "gen")]
     Generate {
-        /// The prompt to generate an agent from (or filename for --template)
-        prompt: String,
-        /// Generate a template markdown file with all frontmatter properties
-        #[arg(
-            short,
-            long,
-            default_value = "false",
-            help = "Create a template with all available frontmatter properties and instructions guide"
-        )]
-        template: bool,
+        /// The filename for the template (optional, defaults to agent-template.md)
+        filename: Option<String>,
     },
 }

@@ -1,18 +1,10 @@
 use anyhow::Result;
-use claco::{claude_home, generate_command, CommandsSubcommand, Scope};
+use claco::{claude_home, CommandsSubcommand, Scope};
 use std::fs;
 use std::io::{self, Write};
 use std::process::Command;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
-use std::thread;
-use std::time::Duration;
 
 // Constants
-const SPINNER_DELAY_MS: u64 = 100;
-const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const MAX_GITHUB_FILE_SIZE: usize = 10 * 1024 * 1024; // 10MB
 
 /// Handle slash command-related subcommands
@@ -28,9 +20,7 @@ pub async fn handle_commands(cmd: CommandsSubcommand) -> Result<()> {
         CommandsSubcommand::List { scope } => handle_commands_list(scope)?,
         CommandsSubcommand::Import { url, scope } => handle_commands_import(url, scope).await?,
         CommandsSubcommand::Clean { scope } => handle_commands_clean(scope)?,
-        CommandsSubcommand::Generate { prompt, template } => {
-            handle_commands_generate(prompt, template)?
-        }
+        CommandsSubcommand::Generate { filename } => handle_commands_generate(filename)?,
         CommandsSubcommand::Delete { interactive } => handle_commands_delete(interactive)?,
     }
     Ok(())
@@ -42,6 +32,9 @@ fn get_commands_dir(scope: &Scope) -> Result<std::path::PathBuf> {
         Scope::Project => {
             let cwd = std::env::current_dir()?;
             Ok(cwd.join(".claude").join("commands"))
+        }
+        Scope::ProjectLocal => {
+            anyhow::bail!("project.local scope is not supported for slash commands")
         }
     }
 }
@@ -60,6 +53,11 @@ fn handle_commands_list(scope: Option<Scope>) -> Result<()> {
             let scope_label = match specific_scope {
                 Scope::User => "user",
                 Scope::Project => "project",
+                Scope::ProjectLocal => {
+                    return Err(anyhow::anyhow!(
+                        "project.local scope is not supported for slash commands"
+                    ));
+                }
             };
 
             println!(
@@ -303,6 +301,11 @@ async fn import_single_command_from_github(path_segments: &[&str], scope: Scope)
     let scope_label = match scope {
         Scope::User => "user",
         Scope::Project => "project",
+        Scope::ProjectLocal => {
+            return Err(anyhow::anyhow!(
+                "project.local scope is not supported for slash commands"
+            ));
+        }
     };
 
     println!(
@@ -426,6 +429,11 @@ fn handle_commands_clean(scope: Scope) -> Result<()> {
     let scope_label = match scope {
         Scope::User => "user",
         Scope::Project => "project",
+        Scope::ProjectLocal => {
+            return Err(anyhow::anyhow!(
+                "project.local scope is not supported for slash commands"
+            ));
+        }
     };
 
     // Count existing commands
@@ -514,6 +522,7 @@ fn handle_commands_delete(interactive: bool) -> Result<()> {
         let scope_label = match scope {
             Scope::User => "user",
             Scope::Project => "project",
+            Scope::ProjectLocal => "project.local",
         };
         println!("{}. [{}] {}", i + 1, scope_label, command_name);
     }
@@ -599,10 +608,9 @@ fn collect_commands_recursive(
     Ok(())
 }
 
-fn handle_commands_generate(prompt: String, template: bool) -> Result<()> {
-    if template {
-        // Generate template markdown
-        let template_content = r#"---
+fn handle_commands_generate(filename: Option<String>) -> Result<()> {
+    // Generate template markdown
+    let template_content = r#"---
 description: Brief description of what this command does
 tools: Read, Edit, Bash
 ---
@@ -622,121 +630,40 @@ $ARGUMENTS
 - Use !`command` to execute shell commands
 "#;
 
-        let filename = if prompt.is_empty() {
-            "command-template.md".to_string()
-        } else {
-            // Sanitize the prompt to create a filename
-            let sanitized = prompt
-                .to_lowercase()
-                .chars()
-                .map(|c| {
-                    if c.is_alphanumeric() || c == '-' {
-                        c
-                    } else {
-                        '-'
-                    }
-                })
-                .collect::<String>()
-                .split('-')
-                .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>()
-                .join("-");
-            format!("{sanitized}.md")
-        };
+    let filename = filename.unwrap_or_else(|| "command-template.md".to_string());
 
-        // Get the project commands directory
-        let commands_dir = get_commands_dir(&Scope::Project)?;
-        fs::create_dir_all(&commands_dir)?;
-
-        let output_path = commands_dir.join(&filename);
-
-        // Check if file already exists
-        if output_path.exists() {
-            print!(
-                "File {} already exists. Overwrite? (y/N): ",
-                output_path.display()
-            );
-            io::stdout().flush()?;
-
-            let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
-
-            if input.trim().to_lowercase() != "y" {
-                println!("Operation cancelled");
-                return Ok(());
-            }
-        }
-
-        // Write the template
-        fs::write(&output_path, template_content)?;
-
-        println!("[OK] Created command template: {}", output_path.display());
-        println!("\nNext steps:");
-        println!("  1. Edit the file to customize your command");
-        println!("  2. Update the frontmatter properties");
-        println!("  3. Replace placeholder content with actual instructions");
-        println!("  4. Test it with: /{}", filename.trim_end_matches(".md"));
-
-        return Ok(());
-    }
-
-    println!("Launching Claude to generate command...");
-
-    // Set up spinner
-    let running = Arc::new(AtomicBool::new(true));
-    let running_clone = running.clone();
-
-    // Spawn spinner thread
-    let spinner_handle = thread::spawn(move || {
-        let mut i = 0;
-
-        while running_clone.load(Ordering::Relaxed) {
-            print!(
-                "\r{} Generating command...",
-                SPINNER_CHARS[i % SPINNER_CHARS.len()]
-            );
-            let _ = io::stdout().flush();
-            thread::sleep(Duration::from_millis(SPINNER_DELAY_MS));
-            i += 1;
-        }
-
-        // Clear the spinner line
-        print!("\r                                        \r");
-        let _ = io::stdout().flush();
-    });
-
-    // Use the new wrapper to generate command
-    let result = generate_command(&prompt);
-
-    // Stop the spinner
-    running.store(false, Ordering::Relaxed);
-    let _ = spinner_handle.join();
-
-    let (filename, content) = match result {
-        Ok((f, c)) => (f, c),
-        Err(e) => {
-            println!("Failed to generate command: {e}");
-            return Ok(());
-        }
-    };
-
-    // Validate filename
-    if filename.is_empty() || !filename.ends_with(".md") {
-        println!("Error: Invalid filename: {filename}");
-        return Ok(());
-    }
-
-    // Content is already extracted by the wrapper
-
-    // Get the commands directory
+    // Get the project commands directory
     let commands_dir = get_commands_dir(&Scope::Project)?;
     fs::create_dir_all(&commands_dir)?;
 
-    // Write the file
-    let output_path = commands_dir.join(filename);
-    fs::write(&output_path, content)?;
+    let output_path = commands_dir.join(&filename);
 
-    println!("[OK] Created command: {}", output_path.display());
+    // Check if file already exists
+    if output_path.exists() {
+        print!(
+            "File {} already exists. Overwrite? (y/N): ",
+            output_path.display()
+        );
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+
+        if input.trim().to_lowercase() != "y" {
+            println!("Operation cancelled");
+            return Ok(());
+        }
+    }
+
+    // Write the template
+    fs::write(&output_path, template_content)?;
+
+    println!("[OK] Created command template: {}", output_path.display());
+    println!("\nNext steps:");
+    println!("  1. Edit the file to customize your command");
+    println!("  2. Update the frontmatter properties");
+    println!("  3. Replace placeholder content with actual instructions");
+    println!("  4. Test it with: /{}", filename.trim_end_matches(".md"));
 
     Ok(())
 }

@@ -1,18 +1,10 @@
 use anyhow::Result;
-use claco::{claude_home, generate_agent, AgentsSubcommand, Scope};
+use claco::{claude_home, AgentsSubcommand, Scope};
 use std::fs;
 use std::io::{self, Write};
 use std::process::Command;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
-use std::thread;
-use std::time::Duration;
 
 // Constants
-const SPINNER_DELAY_MS: u64 = 100;
-const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const MAX_GITHUB_FILE_SIZE: usize = 10 * 1024 * 1024; // 10MB
 
 #[derive(Debug)]
@@ -39,9 +31,7 @@ pub async fn handle_agents(cmd: AgentsSubcommand) -> Result<()> {
         AgentsSubcommand::Import { source, scope } => handle_agents_import(source, scope).await?,
         AgentsSubcommand::Delete { interactive } => handle_agents_delete(interactive)?,
         AgentsSubcommand::Clean { scope } => handle_agents_clean(scope)?,
-        AgentsSubcommand::Generate { prompt, template } => {
-            handle_agents_generate(prompt, template)?
-        }
+        AgentsSubcommand::Generate { filename } => handle_agents_generate(filename)?,
     }
     Ok(())
 }
@@ -52,6 +42,9 @@ fn get_agents_dir(scope: &Scope) -> Result<std::path::PathBuf> {
         Scope::Project => {
             let cwd = std::env::current_dir()?;
             Ok(cwd.join(".claude").join("agents"))
+        }
+        Scope::ProjectLocal => {
+            anyhow::bail!("project.local scope is not supported for agents")
         }
     }
 }
@@ -70,6 +63,11 @@ fn handle_agents_list(scope: Option<Scope>) -> Result<()> {
             let scope_label = match specific_scope {
                 Scope::User => "user",
                 Scope::Project => "project",
+                Scope::ProjectLocal => {
+                    return Err(anyhow::anyhow!(
+                        "project.local scope is not supported for agents"
+                    ));
+                }
             };
 
             println!("Custom agents ({}): {}", scope_label, agents_dir.display());
@@ -151,6 +149,7 @@ fn list_agents_recursive(dir: &std::path::Path, namespace: &str, scope: &Scope) 
                     let scope_label = match scope {
                         Scope::User => "(user)",
                         Scope::Project => "(project)",
+                        Scope::ProjectLocal => "(project.local)",
                     };
                     // Truncate long descriptions for display
                     if agent_info.description.len() > 80 {
@@ -171,6 +170,7 @@ fn list_agents_recursive(dir: &std::path::Path, namespace: &str, scope: &Scope) 
                     let scope_label = match scope {
                         Scope::User => "(user)",
                         Scope::Project => "(project)",
+                        Scope::ProjectLocal => "(project.local)",
                     };
                     println!("  {full_agent_name} {scope_label} - (no metadata)");
                 }
@@ -589,6 +589,11 @@ fn handle_agents_delete(interactive: bool) -> Result<()> {
         let scope_label = match scope {
             Scope::User => "user",
             Scope::Project => "project",
+            Scope::ProjectLocal => {
+                return Err(anyhow::anyhow!(
+                    "project.local scope is not supported for agents"
+                ));
+            }
         };
         println!("{}. [{}] {}", i + 1, scope_label, agent_name);
     }
@@ -696,6 +701,11 @@ fn handle_agents_clean(scope: Scope) -> Result<()> {
     let scope_label = match scope {
         Scope::User => "user",
         Scope::Project => "project",
+        Scope::ProjectLocal => {
+            return Err(anyhow::anyhow!(
+                "project.local scope is not supported for agents"
+            ));
+        }
     };
 
     println!("This will delete {agent_count} agent(s) from {scope_label} scope.");
@@ -732,10 +742,9 @@ fn count_files_in_dir(dir: &std::path::Path) -> Result<usize> {
     Ok(count)
 }
 
-fn handle_agents_generate(prompt: String, template: bool) -> Result<()> {
-    if template {
-        // Generate template markdown for agent
-        let template_content = r#"---
+fn handle_agents_generate(filename: Option<String>) -> Result<()> {
+    // Generate template markdown for agent
+    let template_content = r#"---
 name: agent-name
 description: Brief description of when to use this agent
 ---
@@ -753,115 +762,41 @@ You are a specialized agent for [describe specialization].
 [Describe how this agent handles tasks]
 "#;
 
-        let filename = if prompt.is_empty() {
-            "agent-template.md".to_string()
-        } else {
-            // Sanitize the prompt to create a filename
-            let sanitized = prompt
-                .to_lowercase()
-                .chars()
-                .map(|c| {
-                    if c.is_alphanumeric() || c == '-' {
-                        c
-                    } else {
-                        '-'
-                    }
-                })
-                .collect::<String>()
-                .split('-')
-                .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>()
-                .join("-");
-            format!("{sanitized}.md")
-        };
+    let filename = filename.unwrap_or_else(|| "agent-template.md".to_string());
 
-        // Get the project agents directory
-        let agents_dir = get_agents_dir(&Scope::Project)?;
-        fs::create_dir_all(&agents_dir)?;
-
-        let output_path = agents_dir.join(&filename);
-
-        // Check if file already exists
-        if output_path.exists() {
-            print!(
-                "File {} already exists. Overwrite? (y/N): ",
-                output_path.display()
-            );
-            io::stdout().flush()?;
-
-            let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
-
-            if input.trim().to_lowercase() != "y" {
-                println!("Operation cancelled");
-                return Ok(());
-            }
-        }
-
-        // Write the template
-        fs::write(&output_path, template_content)?;
-
-        println!("[OK] Created agent template: {}", output_path.display());
-        println!("\nNext steps:");
-        println!("  1. Edit the file to customize your agent");
-        println!("  2. Update the 'name' and 'description' fields");
-        println!("  3. Configure tools and other properties as needed");
-        println!("  4. Replace placeholder content with agent instructions");
-        println!("  5. Test it by using the agent in Claude Code");
-
-        return Ok(());
-    }
-
-    println!("Launching Claude to generate agent...");
-
-    // Set up spinner
-    let running = Arc::new(AtomicBool::new(true));
-    let running_clone = running.clone();
-
-    let spinner_handle = thread::spawn(move || {
-        let mut i = 0;
-        while running_clone.load(Ordering::Relaxed) {
-            print!("\r{} ", SPINNER_CHARS[i % SPINNER_CHARS.len()]);
-            let _ = io::stdout().flush();
-            thread::sleep(Duration::from_millis(SPINNER_DELAY_MS));
-            i += 1;
-        }
-        print!("\r  \r");
-        let _ = io::stdout().flush();
-    });
-
-    // Use the new wrapper to generate agent
-    let result = generate_agent(&prompt);
-
-    // Stop the spinner
-    running.store(false, Ordering::Relaxed);
-    let _ = spinner_handle.join();
-
-    let (filename, content) = match result {
-        Ok((f, c)) => (f, c),
-        Err(e) => {
-            println!("Failed to generate agent: {e}");
-            return Ok(());
-        }
-    };
-
-    // Validate filename
-    if filename.is_empty() || !filename.ends_with(".md") {
-        println!("Error: Invalid filename: {filename}");
-        return Ok(());
-    }
-
-    // Content is already extracted by the wrapper
-
-    // Get the agents directory
+    // Get the project agents directory
     let agents_dir = get_agents_dir(&Scope::Project)?;
     fs::create_dir_all(&agents_dir)?;
 
-    // Write the file
-    let output_path = agents_dir.join(filename);
-    fs::write(&output_path, content)?;
+    let output_path = agents_dir.join(&filename);
 
-    println!("[OK] Created agent: {}", output_path.display());
+    // Check if file already exists
+    if output_path.exists() {
+        print!(
+            "File {} already exists. Overwrite? (y/N): ",
+            output_path.display()
+        );
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+
+        if input.trim().to_lowercase() != "y" {
+            println!("Operation cancelled");
+            return Ok(());
+        }
+    }
+
+    // Write the template
+    fs::write(&output_path, template_content)?;
+
+    println!("[OK] Created agent template: {}", output_path.display());
+    println!("\nNext steps:");
+    println!("  1. Edit the file to customize your agent");
+    println!("  2. Update the 'name' and 'description' fields");
+    println!("  3. Configure tools and other properties as needed");
+    println!("  4. Replace placeholder content with agent instructions");
+    println!("  5. Test it by using the agent in Claude Code");
 
     Ok(())
 }
