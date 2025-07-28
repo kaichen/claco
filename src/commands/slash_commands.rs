@@ -167,19 +167,13 @@ async fn handle_commands_import(url: String, scope: Scope) -> Result<()> {
     let path_segments: Vec<&str> = parsed_url
         .path_segments()
         .ok_or_else(|| anyhow::anyhow!("Invalid GitHub URL: No path segments"))?
+        .filter(|s| !s.is_empty()) // Filter out empty segments from trailing slashes
         .collect();
 
     // Handle different URL formats
     match path_segments.len() {
         // https://github.com/owner/repo format
         2 => {
-            println!("Checking for .md files in repository root...");
-            // Import from repo root directory
-            import_commands_from_repo_url(path_segments[0], path_segments[1], None, "main", scope)
-                .await
-        }
-        // https://github.com/owner/repo with trailing slash or other formats
-        3 if path_segments[2].is_empty() => {
             println!("Checking for .md files in repository root...");
             // Import from repo root directory
             import_commands_from_repo_url(path_segments[0], path_segments[1], None, "main", scope)
@@ -355,7 +349,7 @@ async fn import_commands_from_repo_url(
         anyhow::bail!("No .md files found in the repository (excluding documentation files). Please check if the repository contains any command markdown files.");
     }
 
-    println!("Found {} command file(s) to import", md_files.len());
+    println!("Importing {} command file(s)...", md_files.len());
 
     let mut imported_count = 0;
     let mut failed_count = 0;
@@ -372,8 +366,6 @@ async fn import_commands_from_repo_url(
         } else {
             file_name.to_string()
         };
-
-        println!("Importing {file_name}...");
 
         // Build the blob URL path segments for reusing existing import function
         let mut file_segments = vec![owner, repo, "blob", branch];
@@ -444,7 +436,7 @@ async fn import_single_command_from_github(path_segments: &[&str], scope: Scope)
     let commands_dir = get_commands_dir(&scope)?;
     fs::create_dir_all(&commands_dir)?;
 
-    println!("Downloading command from GitHub...");
+    // Download the file using gh api
 
     // Use gh to download the file
     let output = Command::new("gh")
@@ -505,22 +497,7 @@ async fn import_single_command_from_github(path_segments: &[&str], scope: Scope)
     let output_path = commands_dir.join(filename);
     fs::write(&output_path, content)?;
 
-    let scope_label = match scope {
-        Scope::User => "user",
-        Scope::Project => "project",
-        Scope::ProjectLocal => {
-            return Err(anyhow::anyhow!(
-                "project.local scope is not supported for slash commands"
-            ));
-        }
-    };
-
-    println!(
-        "[OK] Imported command '{}' from GitHub to {} scope: {}",
-        filename.trim_end_matches(".md"),
-        scope_label,
-        output_path.display()
-    );
+    println!("[OK] Imported {}", filename.trim_end_matches(".md"));
     Ok(())
 }
 
@@ -549,7 +526,6 @@ async fn import_commands_folder_from_github(path_segments: &[&str], scope: Scope
     }
 
     // List files in the folder using gh api
-    println!("Listing commands in GitHub folder...");
     let api_path = format!("repos/{owner}/{repo}/contents/{folder_path}?ref={branch}");
 
     let output = Command::new("gh").args(["api", &api_path]).output()?;
@@ -583,7 +559,7 @@ async fn import_commands_folder_from_github(path_segments: &[&str], scope: Scope
         return Ok(());
     }
 
-    println!("Found {} command file(s) to import", md_files.len());
+    println!("Importing {} command file(s)...", md_files.len());
 
     let mut imported_count = 0;
     let mut failed_count = 0;
@@ -601,8 +577,6 @@ async fn import_commands_folder_from_github(path_segments: &[&str], scope: Scope
             format!("{folder_path}/{file_name}")
         };
 
-        println!("Importing {file_name}...");
-
         // Build the blob URL path segments
         let mut file_segments = vec![owner, repo, "blob", branch];
         file_segments.extend(file_path.split('/'));
@@ -616,10 +590,11 @@ async fn import_commands_folder_from_github(path_segments: &[&str], scope: Scope
         }
     }
 
-    println!("\n[OK] Import complete: {imported_count} succeeded, {failed_count} failed");
-
     if failed_count > 0 {
+        println!("\n[OK] Imported {imported_count} command(s), {failed_count} failed");
         anyhow::bail!("Some imports failed");
+    } else {
+        println!("\n[OK] Successfully imported {imported_count} command(s)");
     }
 
     Ok(())

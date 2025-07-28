@@ -271,19 +271,13 @@ async fn handle_agents_import_from_url(url: String, scope: Scope) -> Result<()> 
     let path_segments: Vec<&str> = parsed_url
         .path_segments()
         .ok_or_else(|| anyhow::anyhow!("Invalid GitHub URL: No path segments"))?
+        .filter(|s| !s.is_empty()) // Filter out empty segments from trailing slashes
         .collect();
 
     // Handle different URL formats
     match path_segments.len() {
         // https://github.com/owner/repo format
         2 => {
-            println!("Checking for .md files in repository root...");
-            // Import from repo root directory
-            import_agents_from_repo_url(path_segments[0], path_segments[1], None, "main", scope)
-                .await
-        }
-        // https://github.com/owner/repo with trailing slash or other formats
-        3 if path_segments[2].is_empty() => {
             println!("Checking for .md files in repository root...");
             // Import from repo root directory
             import_agents_from_repo_url(path_segments[0], path_segments[1], None, "main", scope)
