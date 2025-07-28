@@ -1,6 +1,6 @@
 # claco - Claude Code Helper
 
-![cover](assets/cli-showcase.png)
+![cover](assets/cli-showcase-v2.png)
 
 `claco` (Claude Code Helper) is a CLI tool for boosting Claude Code productive.
 
