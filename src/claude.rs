@@ -41,30 +41,30 @@ where
 {
     use serde::de::{self, Visitor};
     use serde_json::Value;
-    
+
     struct ContentVisitor;
-    
+
     impl<'de> Visitor<'de> for ContentVisitor {
         type Value = String;
-        
+
         fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
             formatter.write_str("a string or an array of content objects")
         }
-        
+
         fn visit_str<E>(self, value: &str) -> Result<String, E>
         where
             E: de::Error,
         {
             Ok(value.to_string())
         }
-        
+
         fn visit_string<E>(self, value: String) -> Result<String, E>
         where
             E: de::Error,
         {
             Ok(value)
         }
-        
+
         fn visit_seq<A>(self, mut seq: A) -> Result<String, A::Error>
         where
             A: de::SeqAccess<'de>,
@@ -83,7 +83,7 @@ where
             Ok(result)
         }
     }
-    
+
     deserializer.deserialize_any(ContentVisitor)
 }
 

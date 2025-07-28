@@ -131,7 +131,9 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
                 // Now try to parse the user message
                 if let Ok(entry) = serde_json::from_str::<SessionEntry>(&line) {
                     // Check if the content contains a slash command
-                    if let (Some(ref message), Some(ref timestamp)) = (&entry.message, &entry.timestamp) {
+                    if let (Some(ref message), Some(ref timestamp)) =
+                        (&entry.message, &entry.timestamp)
+                    {
                         if let Some(captures) = command_regex.captures(&message.content) {
                             // Print only the slash command
                             if let Some(command) = captures.get(1) {
@@ -145,11 +147,7 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
                             }
                         } else {
                             // No command-name tag found, print the full content
-                            println!(
-                                "{}: {}",
-                                format_timestamp_local(timestamp),
-                                message.content
-                            );
+                            println!("{}: {}", format_timestamp_local(timestamp), message.content);
                         }
                     }
                 }
