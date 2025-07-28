@@ -40,6 +40,9 @@ pub enum Commands {
     },
     /// List all projects with their sessions
     Projects,
+    /// Manage Claude Code settings
+    #[command(subcommand)]
+    Settings(SettingsSubcommand),
 }
 
 #[derive(Subcommand)]
@@ -121,6 +124,21 @@ pub enum CommandsSubcommand {
 pub enum Scope {
     User,
     Project,
+}
+
+#[derive(Subcommand)]
+pub enum SettingsSubcommand {
+    /// Apply settings from a file or URL to Claude Code settings
+    Apply {
+        /// Path to local settings file or GitHub URL
+        source: String,
+        /// Scope: user or project (defaults to project)
+        #[arg(long, value_enum, default_value = "project")]
+        scope: Scope,
+        /// Overwrite existing settings (abort by default when duplicates exist)
+        #[arg(long, default_value = "false")]
+        overwrite: bool,
+    },
 }
 
 #[derive(Subcommand)]
