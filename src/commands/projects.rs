@@ -50,8 +50,16 @@ pub fn handle_projects() -> Result<()> {
         let project_path = if let Some(cwd) = actual_cwd {
             cwd
         } else {
-            let project_name = path.file_name().unwrap().to_string_lossy();
-            desanitize_project_path(&project_name)
+            match path.file_name() {
+                Some(name) => desanitize_project_path(&name.to_string_lossy()),
+                None => {
+                    eprintln!(
+                        "Warning: Could not get project name from path: {}",
+                        path.display()
+                    );
+                    continue;
+                }
+            }
         };
 
         println!("Project: {project_path}");

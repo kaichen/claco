@@ -73,7 +73,13 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
         let path = entry.path();
 
         if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-            let file_name = path.file_stem().unwrap().to_string_lossy();
+            let file_name = match path.file_stem() {
+                Some(stem) => stem.to_string_lossy(),
+                None => {
+                    eprintln!("Warning: Could not get file stem from: {}", path.display());
+                    continue;
+                }
+            };
 
             // If session_id is specified, only process that session
             if let Some(ref sid) = session_id {
