@@ -3,6 +3,7 @@ pub mod history;
 pub mod hooks;
 pub mod projects;
 pub mod session;
+pub mod settings;
 pub mod slash_commands;
 
 pub use agents::handle_agents;
@@ -10,6 +11,7 @@ pub use history::handle_history;
 pub use hooks::handle_hooks;
 pub use projects::handle_projects;
 pub use session::handle_session;
+pub use settings::handle_settings;
 pub use slash_commands::handle_commands;
 
 use chrono::{DateTime, Local};

@@ -146,8 +146,15 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
                                 skip_next = true;
                             }
                         } else {
-                            // No command-name tag found, print the full content
-                            println!("{}: {}", format_timestamp_local(timestamp), message.content);
+                            // No command-name tag found, print the full content if not blank
+                            let content = message.content.trim();
+                            if !content.is_empty() {
+                                println!(
+                                    "{}: {}",
+                                    format_timestamp_local(timestamp),
+                                    message.content
+                                );
+                            }
                         }
                     }
                 }
