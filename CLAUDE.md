@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`claco` (Claude Code Inspector) is a CLI tool for inspecting Claude Code sessions and project data stored in the `~/.claude` directory.
+`claco` (Claude Code Helper) is a CLI tool for boosting Claude Code productivity by managing custom agents, slash commands, hooks, and inspecting Claude Code sessions.
 
 ## Build and Development Commands
 
@@ -43,21 +43,35 @@ The project is a Rust CLI application with the following structure:
 - **config.rs**: Manages configuration loading/saving using platform-specific directories
 - **lib.rs**: Library exports for the public API
 
-### Current vs Planned Implementation
+### Current Implementation
 
-**Current State**: The codebase has basic CLI scaffolding but does not implement the planned Claude inspection features.
-
-**Planned Features** (from context/plan.md):
+**Implemented Features**:
 1. `history` command: List all user messages for a project
 2. `session` command: Display session info by ID
 3. `projects` command: List all projects with their sessions
-4. `live` command: List active Claude sessions
+4. `agents` subcommands: Manage custom agents (list, import, generate, delete, clean)
+5. `commands` subcommands: Manage slash commands (list, import, generate, delete, clean)
+6. `hooks` subcommands: Manage hooks for Claude Code events (list, add, delete)
+
+**Architecture Improvements**:
+- Robust error handling with Result types throughout
+- Atomic file operations to prevent corruption
+- Protection against path traversal attacks
+- Proper handling of concurrent access
 
 ### Claude Code Data Structure
 
 Claude Code stores data in `~/.claude/`:
 - **ide/**: Live session lock files (e.g., `34946.lock`)
 - **projects/**: JSONL logs for each project session
+- **agents/**: Custom agent markdown files
+- **commands/**: Custom slash command markdown files
+- **settings.json**: User-level settings including hooks
+
+Project-specific data in `.claude/`:
+- **agents/**: Project-specific custom agents
+- **commands/**: Project-specific slash commands
+- **settings.json**: Project-level settings including hooks
 
 Project directories are named by sanitizing the working directory path:
 ```
@@ -110,11 +124,40 @@ Options:
   -h, --help                       Display help for command
 ```
 
-## Implementation Notes
+## Implementation Details
 
-When implementing the planned features, you'll need to:
-1. Replace the current generic data processing logic in `main.rs`
-2. Add command parsing for history/session/projects/live subcommands
-3. Implement JSONL parsing for session files
-4. Handle platform-specific home directory paths
-5. Parse the sanitized project directory names back to original paths
+### Custom Agents
+Agents are markdown files with YAML frontmatter:
+```yaml
+---
+name: agent-name
+description: Brief description
+color: blue  # optional
+tools: [Tool1, Tool2]  # optional
+---
+
+# Agent Instructions
+...
+```
+
+### Slash Commands
+Commands are markdown files with optional YAML frontmatter:
+```yaml
+---
+description: Command description
+allowed-tools: Tool1, Tool2, Tool3
+---
+
+Command content here...
+```
+
+### Hooks
+Hooks are stored in settings.json and support various events:
+- `tool:*` - All tool events
+- `tool:bash` - Specific tool events
+- Custom matchers for fine-grained control
+
+### Error Handling
+- All functions that interact with the filesystem return `Result<T>`
+- The `claude_home()` function returns `Result<PathBuf>` to handle missing home directory
+- Atomic file operations ensure data integrity
