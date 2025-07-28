@@ -11,7 +11,7 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let cwd_str = cwd.to_string_lossy().to_string();
 
-    let projects_dir = claude_home().join("projects");
+    let projects_dir = claude_home()?.join("projects");
 
     if !projects_dir.exists() {
         println!("No Claude projects directory found");

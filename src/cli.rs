@@ -1,9 +1,9 @@
 use clap::{Parser, Subcommand};
 
-/// Claude Code CLI Inspector
+/// `claco` (Claude Code Helper) is a CLI tool for boosting Claude Code productive.
 #[derive(Parser)]
 #[command(name = "claco")]
-#[command(author, version, about = "Claude Code CLI Inspector", long_about = None)]
+#[command(author, version, about = "`claco` (Claude Code Helper) is a CLI tool for boosting Claude Code productive.", long_about = None)]
 pub struct Cli {
     /// Enable verbose logging
     #[arg(short, long, global = true)]

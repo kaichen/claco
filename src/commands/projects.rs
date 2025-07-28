@@ -4,7 +4,7 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 
 pub fn handle_projects() -> Result<()> {
-    let projects_dir = claude_home().join("projects");
+    let projects_dir = claude_home()?.join("projects");
 
     if !projects_dir.exists() {
         println!("No Claude projects directory found");

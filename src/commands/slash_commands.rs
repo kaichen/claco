@@ -25,7 +25,7 @@ pub async fn handle_commands(cmd: CommandsSubcommand) -> Result<()> {
 
 fn get_commands_dir(scope: &Scope) -> Result<std::path::PathBuf> {
     match scope {
-        Scope::User => Ok(claude_home().join("commands")),
+        Scope::User => Ok(claude_home()?.join("commands")),
         Scope::Project => {
             let cwd = std::env::current_dir()?;
             Ok(cwd.join(".claude").join("commands"))
@@ -684,14 +684,14 @@ $ARGUMENTS
                 "\r{} Generating command...",
                 spinner_chars[i % spinner_chars.len()]
             );
-            io::stdout().flush().unwrap();
+            let _ = io::stdout().flush();
             thread::sleep(Duration::from_millis(100));
             i += 1;
         }
 
         // Clear the spinner line
         print!("\r                                        \r");
-        io::stdout().flush().unwrap();
+        let _ = io::stdout().flush();
     });
 
     // Use the new wrapper to generate command
@@ -699,7 +699,7 @@ $ARGUMENTS
 
     // Stop the spinner
     running.store(false, Ordering::Relaxed);
-    spinner_handle.join().unwrap();
+    let _ = spinner_handle.join();
 
     let (filename, content) = match result {
         Ok((f, c)) => (f, c),

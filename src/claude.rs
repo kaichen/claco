@@ -1,3 +1,4 @@
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -63,10 +64,10 @@ pub struct Settings {
 }
 
 /// Get the Claude home directory
-pub fn claude_home() -> PathBuf {
+pub fn claude_home() -> Result<PathBuf> {
     dirs::home_dir()
-        .expect("Could not find home directory")
-        .join(".claude")
+        .ok_or_else(|| anyhow::anyhow!("Could not find home directory"))
+        .map(|home| home.join(".claude"))
 }
 
 /// Convert a working directory path to a sanitized project directory name
@@ -95,14 +96,14 @@ pub fn desanitize_project_path(sanitized: &str) -> String {
 }
 
 /// Get the path to a project's directory in ~/.claude/projects
-pub fn project_dir(cwd: &str) -> PathBuf {
+pub fn project_dir(cwd: &str) -> Result<PathBuf> {
     let sanitized = sanitize_project_path(cwd);
-    claude_home().join("projects").join(sanitized)
+    Ok(claude_home()?.join("projects").join(sanitized))
 }
 
 /// Get the path to user settings.json
-pub fn user_settings_path() -> PathBuf {
-    claude_home().join("settings.json")
+pub fn user_settings_path() -> Result<PathBuf> {
+    Ok(claude_home()?.join("settings.json"))
 }
 
 /// Get the path to project settings.json

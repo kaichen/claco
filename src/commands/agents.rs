@@ -35,7 +35,7 @@ pub async fn handle_agents(cmd: AgentsSubcommand) -> Result<()> {
 
 fn get_agents_dir(scope: &Scope) -> Result<std::path::PathBuf> {
     match scope {
-        Scope::User => Ok(claude_home().join("agents")),
+        Scope::User => Ok(claude_home()?.join("agents")),
         Scope::Project => {
             let cwd = std::env::current_dir()?;
             Ok(cwd.join(".claude").join("agents"))
@@ -806,12 +806,12 @@ You are a specialized agent for [describe specialization].
         let mut i = 0;
         while running_clone.load(Ordering::Relaxed) {
             print!("\r{} ", spinner_chars[i % spinner_chars.len()]);
-            io::stdout().flush().unwrap();
+            let _ = io::stdout().flush();
             thread::sleep(Duration::from_millis(100));
             i += 1;
         }
         print!("\r  \r");
-        io::stdout().flush().unwrap();
+        let _ = io::stdout().flush();
     });
 
     // Use the new wrapper to generate agent
@@ -819,7 +819,7 @@ You are a specialized agent for [describe specialization].
 
     // Stop the spinner
     running.store(false, Ordering::Relaxed);
-    spinner_handle.join().unwrap();
+    let _ = spinner_handle.join();
 
     let (filename, content) = match result {
         Ok((f, c)) => (f, c),

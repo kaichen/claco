@@ -6,7 +6,7 @@ use std::io::{BufRead, BufReader};
 use super::format_timestamp_local;
 
 pub fn handle_session(session_id: Option<String>) -> Result<()> {
-    let projects_dir = claude_home().join("projects");
+    let projects_dir = claude_home()?.join("projects");
 
     if !projects_dir.exists() {
         println!("No Claude projects directory found");

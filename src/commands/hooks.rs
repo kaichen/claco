@@ -23,7 +23,7 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
         Some(specific_scope) => {
             // Show hooks for a specific scope
             let settings_path = match specific_scope.as_str() {
-                "user" => user_settings_path(),
+                "user" => user_settings_path()?,
                 "project" => project_settings_path(),
                 _ => {
                     eprintln!("Error: Invalid scope '{specific_scope}'. Use 'user' or 'project'");
@@ -69,7 +69,7 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
         None => {
             // Show hooks from both user and project scopes
             // List user hooks
-            let user_settings_path = user_settings_path();
+            let user_settings_path = user_settings_path()?;
             let user_settings = load_settings(&user_settings_path)?;
 
             if let Some(hooks) = &user_settings.hooks {
@@ -142,7 +142,7 @@ fn handle_hooks_list(scope: Option<String>) -> Result<()> {
 
 fn handle_hooks_add(scope: String, event: String, matcher: String, command: String) -> Result<()> {
     let settings_path = match scope.as_str() {
-        "user" => user_settings_path(),
+        "user" => user_settings_path()?,
         "project" => project_settings_path(),
         _ => {
             eprintln!("Error: Invalid scope '{scope}'. Use 'user' or 'project'");
@@ -218,7 +218,7 @@ fn handle_hooks_delete(interactive: bool) -> Result<()> {
     }
 
     // Load hooks from both scopes
-    let user_settings_path = user_settings_path();
+    let user_settings_path = user_settings_path()?;
     let project_settings_path = project_settings_path();
 
     let user_settings = load_settings(&user_settings_path)?;
