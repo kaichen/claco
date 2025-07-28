@@ -1,3 +1,6 @@
+[build]
+rustflags = ["-Dwarnings"]
+
 [alias]
 lint = ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
 fmt-check = ["fmt", "--all", "--", "--check"]

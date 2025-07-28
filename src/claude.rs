@@ -287,8 +287,10 @@ mod tests {
         let settings_path = dir.path().join("settings.json");
 
         // Create settings with hooks and other fields
-        let mut settings = Settings::default();
-        settings.hooks = Some(HashMap::new());
+        let mut settings = Settings {
+            hooks: Some(HashMap::new()),
+            ..Default::default()
+        };
         settings
             .other
             .insert("model".to_string(), json!("claude-3-opus"));
