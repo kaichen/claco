@@ -1,14 +1,14 @@
 [package]
 name = "claco"
-version = "0.2.5"
+version = "2.0.0"
 edition = "2021"
 authors = ["Kai Chen <kai@thekaiway.com>"]
-description = "Claude Code CLI Inspector - inspect Claude Code sessions and project data"
+description = "a CLI tool for boosting Claude Code productive."
 license = "MIT"
 repository = "https://github.com/kaichen/claco"
 homepage = "https://github.com/kaichen/claco"
 readme = "README.md"
-keywords = ["claude", "cli", "inspector", "development-tools"]
+keywords = ["claude", "cli", "claude-code", "development-tools"]
 categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]

@@ -188,7 +188,7 @@ dependencies = [
 
 [[package]]
 name = "claco"
-version = "0.2.5"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "base64",
