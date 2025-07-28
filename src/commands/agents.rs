@@ -1,22 +1,15 @@
 use anyhow::Result;
-use claco::{claude_home, generate_agent, AgentsSubcommand, Scope};
+use claco::{claude_home, AgentsSubcommand, Scope};
 use std::fs;
 use std::io::{self, Write};
 use std::process::Command;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
-use std::thread;
-use std::time::Duration;
 
 // Constants
-const SPINNER_DELAY_MS: u64 = 100;
-const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const MAX_GITHUB_FILE_SIZE: usize = 10 * 1024 * 1024; // 10MB
 
 #[derive(Debug)]
 struct AgentInfo {
+    #[allow(dead_code)]
     name: String,
     description: String,
     #[allow(dead_code)]
@@ -39,9 +32,7 @@ pub async fn handle_agents(cmd: AgentsSubcommand) -> Result<()> {
         AgentsSubcommand::Import { source, scope } => handle_agents_import(source, scope).await?,
         AgentsSubcommand::Delete { interactive } => handle_agents_delete(interactive)?,
         AgentsSubcommand::Clean { scope } => handle_agents_clean(scope)?,
-        AgentsSubcommand::Generate { prompt, template } => {
-            handle_agents_generate(prompt, template)?
-        }
+        AgentsSubcommand::Generate { filename } => handle_agents_generate(filename)?,
     }
     Ok(())
 }
@@ -52,6 +43,9 @@ fn get_agents_dir(scope: &Scope) -> Result<std::path::PathBuf> {
         Scope::Project => {
             let cwd = std::env::current_dir()?;
             Ok(cwd.join(".claude").join("agents"))
+        }
+        Scope::ProjectLocal => {
+            anyhow::bail!("project.local scope is not supported for agents")
         }
     }
 }
@@ -70,6 +64,11 @@ fn handle_agents_list(scope: Option<Scope>) -> Result<()> {
             let scope_label = match specific_scope {
                 Scope::User => "user",
                 Scope::Project => "project",
+                Scope::ProjectLocal => {
+                    return Err(anyhow::anyhow!(
+                        "project.local scope is not supported for agents"
+                    ));
+                }
             };
 
             println!("Custom agents ({}): {}", scope_label, agents_dir.display());
@@ -107,7 +106,7 @@ fn handle_agents_list(scope: Option<Scope>) -> Result<()> {
     Ok(())
 }
 
-fn list_agents_recursive(dir: &std::path::Path, namespace: &str, scope: &Scope) -> Result<()> {
+fn list_agents_recursive(dir: &std::path::Path, namespace: &str, _scope: &Scope) -> Result<()> {
     let mut entries: Vec<_> = fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
 
     // Sort entries: directories first, then files
@@ -133,7 +132,7 @@ fn list_agents_recursive(dir: &std::path::Path, namespace: &str, scope: &Scope) 
             } else {
                 format!("{namespace}/{file_name_str}")
             };
-            list_agents_recursive(&path, &new_namespace, scope)?;
+            list_agents_recursive(&path, &new_namespace, _scope)?;
         } else if file_name_str.ends_with(".md") {
             let agent_name = match file_name_str.strip_suffix(".md") {
                 Some(name) => name,
@@ -148,31 +147,15 @@ fn list_agents_recursive(dir: &std::path::Path, namespace: &str, scope: &Scope) 
             // Try to read and parse agent metadata
             if let Ok(content) = fs::read_to_string(&path) {
                 if let Some(agent_info) = parse_agent_metadata(&content) {
-                    let scope_label = match scope {
-                        Scope::User => "(user)",
-                        Scope::Project => "(project)",
-                    };
                     // Truncate long descriptions for display
                     if agent_info.description.len() > 80 {
-                        println!(
-                            "  {} {} - {} [{}...]",
-                            full_agent_name,
-                            scope_label,
-                            agent_info.name,
-                            &agent_info.description[..77]
-                        );
+                        let truncated = agent_info.description.chars().take(77).collect::<String>();
+                        println!("  {full_agent_name} [{truncated}...]");
                     } else {
-                        println!(
-                            "  {} {} - {} [{}]",
-                            full_agent_name, scope_label, agent_info.name, agent_info.description
-                        );
+                        println!("  {} [{}]", full_agent_name, agent_info.description);
                     }
                 } else {
-                    let scope_label = match scope {
-                        Scope::User => "(user)",
-                        Scope::Project => "(project)",
-                    };
-                    println!("  {full_agent_name} {scope_label} - (no metadata)");
+                    println!("  {full_agent_name} [no description]");
                 }
             }
         }
@@ -285,31 +268,226 @@ async fn handle_agents_import_from_url(url: String, scope: Scope) -> Result<()> 
     let path_segments: Vec<&str> = parsed_url
         .path_segments()
         .ok_or_else(|| anyhow::anyhow!("Invalid GitHub URL: No path segments"))?
+        .filter(|s| !s.is_empty()) // Filter out empty segments from trailing slashes
         .collect();
 
-    if path_segments.len() < 4 {
-        anyhow::bail!("Invalid GitHub URL format. Expected: https://github.com/owner/repo/blob/branch/path or https://github.com/owner/repo/tree/branch/path");
-    }
-
-    // Check if it's a tree (folder) or blob (file) URL
-    let url_type = path_segments.get(2).copied();
-
-    match url_type {
-        Some("blob") => {
-            if path_segments.len() < 5 {
-                anyhow::bail!("Invalid file URL format. Expected: https://github.com/owner/repo/blob/branch/path/to/agent.md");
-            }
-            // Import single file
-            import_single_agent_from_github(&path_segments, scope).await
+    // Handle different URL formats
+    match path_segments.len() {
+        // https://github.com/owner/repo format
+        2 => {
+            println!("Checking for .md files in repository root...");
+            // Import from repo root directory
+            import_agents_from_repo_url(path_segments[0], path_segments[1], None, "main", scope)
+                .await
         }
-        Some("tree") => {
-            // Import all .md files from folder
-            import_agents_folder_from_github(&path_segments, scope).await
+        // Standard blob/tree URLs
+        _ if path_segments.len() >= 4 => {
+            // Check if it's a tree (folder) or blob (file) URL
+            let url_type = path_segments.get(2).copied();
+
+            match url_type {
+                Some("blob") => {
+                    if path_segments.len() < 5 {
+                        anyhow::bail!("Invalid file URL format. Expected: https://github.com/owner/repo/blob/branch/path/to/agent.md");
+                    }
+
+                    // Check if the last segment looks like a file or directory
+                    let last_segment = path_segments.last().unwrap();
+                    if !last_segment.ends_with(".md") {
+                        // This might be a directory shown as blob by GitHub
+                        // Try to list it first
+                        let owner = path_segments[0];
+                        let repo = path_segments[1];
+                        let branch = path_segments[3];
+                        let path = path_segments[4..].join("/");
+
+                        println!("Checking if URL points to a directory...");
+
+                        // Try to list the path as a directory
+                        let api_path = format!("repos/{owner}/{repo}/contents/{path}?ref={branch}");
+                        let check_output = Command::new("gh").args(["api", &api_path]).output()?;
+
+                        if check_output.status.success() {
+                            // Parse to check if it's an array (directory)
+                            let json_str = String::from_utf8(check_output.stdout)?;
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                                if json.is_array() {
+                                    // It's a directory, convert to tree URL
+                                    println!(
+                                        "URL points to a directory. Converting to tree URL..."
+                                    );
+                                    let mut tree_segments = path_segments.to_vec();
+                                    tree_segments[2] = "tree";
+                                    return import_agents_folder_from_github(&tree_segments, scope)
+                                        .await;
+                                }
+                            }
+                        }
+                    }
+
+                    // Import single file
+                    import_single_agent_from_github(&path_segments, scope).await
+                }
+                Some("tree") => {
+                    // Import all .md files from folder
+                    import_agents_folder_from_github(&path_segments, scope).await
+                }
+                _ => {
+                    anyhow::bail!("Invalid GitHub URL format. URL must be either:\n  - https://github.com/owner/repo (imports from root)\n  - https://github.com/owner/repo/blob/branch/path/to/agent.md (single file)\n  - https://github.com/owner/repo/tree/branch/path/to/folder (folder)");
+                }
+            }
         }
         _ => {
-            anyhow::bail!("Invalid GitHub URL format. URL must contain either 'blob' (for files) or 'tree' (for folders)");
+            anyhow::bail!("Invalid GitHub URL format. URL must be either:\n  - https://github.com/owner/repo (imports from root)\n  - https://github.com/owner/repo/blob/branch/path/to/agent.md (single file)\n  - https://github.com/owner/repo/tree/branch/path/to/folder (folder)");
         }
     }
+}
+
+async fn import_agents_from_repo_url(
+    owner: &str,
+    repo: &str,
+    path: Option<&str>,
+    branch: &str,
+    scope: Scope,
+) -> Result<()> {
+    // Validate components don't contain dangerous characters
+    for component in [owner, repo, branch] {
+        if component.contains([
+            '$', '`', '\\', '"', '\'', '\n', '\r', ';', '|', '&', '<', '>', '(', ')',
+        ]) {
+            anyhow::bail!("Invalid characters in URL component: {}", component);
+        }
+    }
+
+    // List files in the repository root or specified path
+    let api_path = if let Some(folder_path) = path {
+        // Additional validation for folder path
+        if folder_path.contains("..") {
+            anyhow::bail!("Invalid folder path in URL: Path traversal detected");
+        }
+        format!("repos/{owner}/{repo}/contents/{folder_path}?ref={branch}")
+    } else {
+        format!("repos/{owner}/{repo}/contents?ref={branch}")
+    };
+
+    let output = Command::new("gh").args(["api", &api_path]).output()?;
+
+    if !output.status.success() {
+        let error = String::from_utf8_lossy(&output.stderr);
+        if error.contains("404") {
+            anyhow::bail!("Repository or path not found. Make sure the repository exists and you have access to it.");
+        }
+        anyhow::bail!("Failed to list repository contents: {}", error);
+    }
+
+    // Parse JSON response
+    let json_str = String::from_utf8(output.stdout)?;
+    let files: serde_json::Value = serde_json::from_str(&json_str)?;
+
+    // Common documentation files to exclude
+    const EXCLUDED_FILES: &[&str] = &[
+        "README.md",
+        "readme.md",
+        "Readme.md",
+        "CHANGELOG.md",
+        "changelog.md",
+        "Changelog.md",
+        "CONTRIBUTING.md",
+        "contributing.md",
+        "Contributing.md",
+        "LICENSE.md",
+        "license.md",
+        "License.md",
+        "CODE_OF_CONDUCT.md",
+        "code_of_conduct.md",
+        "SECURITY.md",
+        "security.md",
+        "Security.md",
+        "SUPPORT.md",
+        "support.md",
+        "Support.md",
+        "FUNDING.md",
+        "funding.md",
+        "Funding.md",
+        "PULL_REQUEST_TEMPLATE.md",
+        "pull_request_template.md",
+        "ISSUE_TEMPLATE.md",
+        "issue_template.md",
+    ];
+
+    // Filter for .md files, excluding common documentation files
+    let md_files: Vec<&serde_json::Value> = files
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("Expected JSON array response"))?
+        .iter()
+        .filter(|file| {
+            if file.get("type").and_then(|t| t.as_str()) != Some("file") {
+                return false;
+            }
+
+            if let Some(name) = file.get("name").and_then(|n| n.as_str()) {
+                // Check if it's a markdown file
+                if !name.ends_with(".md") {
+                    return false;
+                }
+
+                // Exclude common documentation files when importing from repo root
+                if path.is_none() && EXCLUDED_FILES.contains(&name) {
+                    return false;
+                }
+
+                true
+            } else {
+                false
+            }
+        })
+        .collect();
+
+    if md_files.is_empty() {
+        anyhow::bail!("No .md files found in the repository (excluding documentation files). Please check if the repository contains any agent markdown files.");
+    }
+
+    println!("Found {} agent file(s) to import", md_files.len());
+
+    let mut imported_count = 0;
+    let mut failed_count = 0;
+
+    // Import each .md file
+    for file in md_files {
+        let file_name = file
+            .get("name")
+            .and_then(|n| n.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing file name"))?;
+
+        let file_path = if let Some(folder_path) = path {
+            format!("{folder_path}/{file_name}")
+        } else {
+            file_name.to_string()
+        };
+
+        println!("Importing {file_name}...");
+
+        // Build the blob URL path segments for reusing existing import function
+        let mut file_segments = vec![owner, repo, "blob", branch];
+        file_segments.extend(file_path.split('/'));
+
+        match import_single_agent_from_github(&file_segments, scope.clone()).await {
+            Ok(_) => imported_count += 1,
+            Err(e) => {
+                eprintln!("error: failed to import {file_name}: {e}");
+                failed_count += 1;
+            }
+        }
+    }
+
+    if failed_count > 0 {
+        println!("\n[OK] Imported {imported_count} agent(s), {failed_count} failed");
+        anyhow::bail!("Some imports failed");
+    } else {
+        println!("\n[OK] Successfully imported {imported_count} agent(s)");
+    }
+
+    Ok(())
 }
 
 async fn import_single_agent_from_github(path_segments: &[&str], scope: Scope) -> Result<()> {
@@ -335,12 +513,16 @@ async fn import_single_agent_from_github(path_segments: &[&str], scope: Scope) -
     // Download the file using gh api
     let api_path = format!("repos/{owner}/{repo}/contents/{file_path}?ref={branch}");
 
+    // First, try to get the content assuming it's a file
     let output = Command::new("gh")
         .args(["api", &api_path, "--jq", ".content"])
         .output()?;
 
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr);
+
+        // Note: Directory detection is now handled earlier in the flow
+
         anyhow::bail!("Failed to download agent: {}", error);
     }
 
@@ -589,6 +771,11 @@ fn handle_agents_delete(interactive: bool) -> Result<()> {
         let scope_label = match scope {
             Scope::User => "user",
             Scope::Project => "project",
+            Scope::ProjectLocal => {
+                return Err(anyhow::anyhow!(
+                    "project.local scope is not supported for agents"
+                ));
+            }
         };
         println!("{}. [{}] {}", i + 1, scope_label, agent_name);
     }
@@ -696,6 +883,11 @@ fn handle_agents_clean(scope: Scope) -> Result<()> {
     let scope_label = match scope {
         Scope::User => "user",
         Scope::Project => "project",
+        Scope::ProjectLocal => {
+            return Err(anyhow::anyhow!(
+                "project.local scope is not supported for agents"
+            ));
+        }
     };
 
     println!("This will delete {agent_count} agent(s) from {scope_label} scope.");
@@ -732,10 +924,9 @@ fn count_files_in_dir(dir: &std::path::Path) -> Result<usize> {
     Ok(count)
 }
 
-fn handle_agents_generate(prompt: String, template: bool) -> Result<()> {
-    if template {
-        // Generate template markdown for agent
-        let template_content = r#"---
+fn handle_agents_generate(filename: Option<String>) -> Result<()> {
+    // Generate template markdown for agent
+    let template_content = r#"---
 name: agent-name
 description: Brief description of when to use this agent
 ---
@@ -753,115 +944,41 @@ You are a specialized agent for [describe specialization].
 [Describe how this agent handles tasks]
 "#;
 
-        let filename = if prompt.is_empty() {
-            "agent-template.md".to_string()
-        } else {
-            // Sanitize the prompt to create a filename
-            let sanitized = prompt
-                .to_lowercase()
-                .chars()
-                .map(|c| {
-                    if c.is_alphanumeric() || c == '-' {
-                        c
-                    } else {
-                        '-'
-                    }
-                })
-                .collect::<String>()
-                .split('-')
-                .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>()
-                .join("-");
-            format!("{sanitized}.md")
-        };
+    let filename = filename.unwrap_or_else(|| "agent-template.md".to_string());
 
-        // Get the project agents directory
-        let agents_dir = get_agents_dir(&Scope::Project)?;
-        fs::create_dir_all(&agents_dir)?;
-
-        let output_path = agents_dir.join(&filename);
-
-        // Check if file already exists
-        if output_path.exists() {
-            print!(
-                "File {} already exists. Overwrite? (y/N): ",
-                output_path.display()
-            );
-            io::stdout().flush()?;
-
-            let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
-
-            if input.trim().to_lowercase() != "y" {
-                println!("Operation cancelled");
-                return Ok(());
-            }
-        }
-
-        // Write the template
-        fs::write(&output_path, template_content)?;
-
-        println!("[OK] Created agent template: {}", output_path.display());
-        println!("\nNext steps:");
-        println!("  1. Edit the file to customize your agent");
-        println!("  2. Update the 'name' and 'description' fields");
-        println!("  3. Configure tools and other properties as needed");
-        println!("  4. Replace placeholder content with agent instructions");
-        println!("  5. Test it by using the agent in Claude Code");
-
-        return Ok(());
-    }
-
-    println!("Launching Claude to generate agent...");
-
-    // Set up spinner
-    let running = Arc::new(AtomicBool::new(true));
-    let running_clone = running.clone();
-
-    let spinner_handle = thread::spawn(move || {
-        let mut i = 0;
-        while running_clone.load(Ordering::Relaxed) {
-            print!("\r{} ", SPINNER_CHARS[i % SPINNER_CHARS.len()]);
-            let _ = io::stdout().flush();
-            thread::sleep(Duration::from_millis(SPINNER_DELAY_MS));
-            i += 1;
-        }
-        print!("\r  \r");
-        let _ = io::stdout().flush();
-    });
-
-    // Use the new wrapper to generate agent
-    let result = generate_agent(&prompt);
-
-    // Stop the spinner
-    running.store(false, Ordering::Relaxed);
-    let _ = spinner_handle.join();
-
-    let (filename, content) = match result {
-        Ok((f, c)) => (f, c),
-        Err(e) => {
-            println!("Failed to generate agent: {e}");
-            return Ok(());
-        }
-    };
-
-    // Validate filename
-    if filename.is_empty() || !filename.ends_with(".md") {
-        println!("Error: Invalid filename: {filename}");
-        return Ok(());
-    }
-
-    // Content is already extracted by the wrapper
-
-    // Get the agents directory
+    // Get the project agents directory
     let agents_dir = get_agents_dir(&Scope::Project)?;
     fs::create_dir_all(&agents_dir)?;
 
-    // Write the file
-    let output_path = agents_dir.join(filename);
-    fs::write(&output_path, content)?;
+    let output_path = agents_dir.join(&filename);
 
-    println!("[OK] Created agent: {}", output_path.display());
+    // Check if file already exists
+    if output_path.exists() {
+        print!(
+            "File {} already exists. Overwrite? (y/N): ",
+            output_path.display()
+        );
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+
+        if input.trim().to_lowercase() != "y" {
+            println!("Operation cancelled");
+            return Ok(());
+        }
+    }
+
+    // Write the template
+    fs::write(&output_path, template_content)?;
+
+    println!("[OK] Created agent template: {}", output_path.display());
+    println!("\nNext steps:");
+    println!("  1. Edit the file to customize your agent");
+    println!("  2. Update the 'name' and 'description' fields");
+    println!("  3. Configure tools and other properties as needed");
+    println!("  4. Replace placeholder content with agent instructions");
+    println!("  5. Test it by using the agent in Claude Code");
 
     Ok(())
 }

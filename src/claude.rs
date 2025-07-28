@@ -165,6 +165,11 @@ pub fn project_settings_path() -> PathBuf {
     PathBuf::from(".claude").join("settings.json")
 }
 
+/// Get the path to project-local settings
+pub fn project_local_settings_path() -> PathBuf {
+    PathBuf::from(".claude").join("settings.local.json")
+}
+
 /// Load settings from a file path
 pub fn load_settings(path: &PathBuf) -> anyhow::Result<Settings> {
     use anyhow::Context;

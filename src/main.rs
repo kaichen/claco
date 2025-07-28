@@ -28,6 +28,7 @@ async fn main() -> Result<()> {
         Commands::History { session } => commands::handle_history(session)?,
         Commands::Session { session_id } => commands::handle_session(session_id)?,
         Commands::Projects => commands::handle_projects()?,
+        Commands::Settings(cmd) => commands::handle_settings(cmd).await?,
     }
 
     Ok(())
