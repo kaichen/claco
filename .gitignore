@@ -15,5 +15,8 @@
 Thumbs.db
 
 # Project specific
+.claude/agents
+.claude/commands
+.claude/settings.json
 /data/
 config.json

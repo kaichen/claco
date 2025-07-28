@@ -3,8 +3,14 @@ use claco::{claude_home, desanitize_project_path, SessionEntry};
 use std::fs;
 use std::io::{BufRead, BufReader};
 
+/// List all Claude Code projects with their sessions
+///
+/// Reads the ~/.claude/projects directory and displays:
+/// - Project paths (desanitized from directory names)
+/// - Associated session IDs for each project
+/// - Attempts to extract the actual cwd from session files
 pub fn handle_projects() -> Result<()> {
-    let projects_dir = claude_home().join("projects");
+    let projects_dir = claude_home()?.join("projects");
 
     if !projects_dir.exists() {
         println!("No Claude projects directory found");
@@ -29,7 +35,7 @@ pub fn handle_projects() -> Result<()> {
 
             if session_path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
                 if let Some(session_id) = session_path.file_stem() {
-                    sessions.push(session_id.to_string_lossy().to_string());
+                    sessions.push(session_id.to_string_lossy().into_owned());
                 }
 
                 // Try to read the actual cwd from the first line of this JSONL file
@@ -38,7 +44,7 @@ pub fn handle_projects() -> Result<()> {
                         let reader = BufReader::new(file);
                         if let Some(Ok(first_line)) = reader.lines().next() {
                             if let Ok(entry) = serde_json::from_str::<SessionEntry>(&first_line) {
-                                actual_cwd = Some(entry.cwd);
+                                actual_cwd = entry.cwd;
                             }
                         }
                     }
@@ -50,8 +56,16 @@ pub fn handle_projects() -> Result<()> {
         let project_path = if let Some(cwd) = actual_cwd {
             cwd
         } else {
-            let project_name = path.file_name().unwrap().to_string_lossy();
-            desanitize_project_path(&project_name)
+            match path.file_name() {
+                Some(name) => desanitize_project_path(&name.to_string_lossy()),
+                None => {
+                    eprintln!(
+                        "warning: could not get project name from path: {}",
+                        path.display()
+                    );
+                    continue;
+                }
+            }
         };
 
         println!("Project: {project_path}");
