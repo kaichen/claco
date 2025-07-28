@@ -149,11 +149,8 @@ fn list_agents_recursive(dir: &std::path::Path, namespace: &str, _scope: &Scope)
                 if let Some(agent_info) = parse_agent_metadata(&content) {
                     // Truncate long descriptions for display
                     if agent_info.description.len() > 80 {
-                        println!(
-                            "  {} [{}...]",
-                            full_agent_name,
-                            &agent_info.description[..77]
-                        );
+                        let truncated = agent_info.description.chars().take(77).collect::<String>();
+                        println!("  {full_agent_name} [{truncated}...]");
                     } else {
                         println!("  {} [{}]", full_agent_name, agent_info.description);
                     }
