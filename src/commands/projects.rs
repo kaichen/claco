@@ -44,7 +44,7 @@ pub fn handle_projects() -> Result<()> {
                         let reader = BufReader::new(file);
                         if let Some(Ok(first_line)) = reader.lines().next() {
                             if let Ok(entry) = serde_json::from_str::<SessionEntry>(&first_line) {
-                                actual_cwd = Some(entry.cwd);
+                                actual_cwd = entry.cwd;
                             }
                         }
                     }

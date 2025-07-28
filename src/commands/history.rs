@@ -46,9 +46,11 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
                     let reader = BufReader::new(file);
                     if let Some(Ok(first_line)) = reader.lines().next() {
                         if let Ok(entry) = serde_json::from_str::<SessionEntry>(&first_line) {
-                            if entry.cwd == cwd_str {
-                                matched_project_path = Some(path);
-                                break 'outer;
+                            if let Some(ref entry_cwd) = entry.cwd {
+                                if entry_cwd == &cwd_str {
+                                    matched_project_path = Some(path);
+                                    break 'outer;
+                                }
                             }
                         }
                     }
@@ -129,24 +131,26 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
                 // Now try to parse the user message
                 if let Ok(entry) = serde_json::from_str::<SessionEntry>(&line) {
                     // Check if the content contains a slash command
-                    if let Some(captures) = command_regex.captures(&entry.message.content) {
-                        // Print only the slash command
-                        if let Some(command) = captures.get(1) {
+                    if let (Some(ref message), Some(ref timestamp)) = (&entry.message, &entry.timestamp) {
+                        if let Some(captures) = command_regex.captures(&message.content) {
+                            // Print only the slash command
+                            if let Some(command) = captures.get(1) {
+                                println!(
+                                    "{}: {}",
+                                    format_timestamp_local(timestamp),
+                                    command.as_str()
+                                );
+                                // Skip the next line after a slash command
+                                skip_next = true;
+                            }
+                        } else {
+                            // No command-name tag found, print the full content
                             println!(
                                 "{}: {}",
-                                format_timestamp_local(&entry.timestamp),
-                                command.as_str()
+                                format_timestamp_local(timestamp),
+                                message.content
                             );
-                            // Skip the next line after a slash command
-                            skip_next = true;
                         }
-                    } else {
-                        // No command-name tag found, print the full content
-                        println!(
-                            "{}: {}",
-                            format_timestamp_local(&entry.timestamp),
-                            entry.message.content
-                        );
                     }
                 }
             }

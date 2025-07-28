@@ -11,26 +11,80 @@ use std::path::PathBuf;
 pub struct SessionEntry {
     #[serde(rename = "parentUuid")]
     pub parent_uuid: Option<String>,
-    #[serde(rename = "isSidechain")]
-    pub is_sidechain: bool,
+    #[serde(rename = "isSidechain", skip_serializing_if = "Option::is_none")]
+    pub is_sidechain: Option<bool>,
     #[serde(rename = "userType")]
-    pub user_type: String,
-    pub cwd: String,
+    pub user_type: Option<String>,
+    pub cwd: Option<String>,
     #[serde(rename = "sessionId")]
-    pub session_id: String,
-    pub version: String,
+    pub session_id: Option<String>,
+    pub version: Option<String>,
     #[serde(rename = "type")]
     pub message_type: String,
-    pub message: Message,
-    pub uuid: String,
-    pub timestamp: String,
+    pub message: Option<Message>,
+    pub uuid: Option<String>,
+    pub timestamp: Option<String>,
 }
 
 /// Represents a message in the Claude session
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub role: String,
+    #[serde(deserialize_with = "deserialize_content")]
     pub content: String,
+}
+
+/// Custom deserializer for message content that can be either a string or an array
+fn deserialize_content<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+    use serde_json::Value;
+    
+    struct ContentVisitor;
+    
+    impl<'de> Visitor<'de> for ContentVisitor {
+        type Value = String;
+        
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string or an array of content objects")
+        }
+        
+        fn visit_str<E>(self, value: &str) -> Result<String, E>
+        where
+            E: de::Error,
+        {
+            Ok(value.to_string())
+        }
+        
+        fn visit_string<E>(self, value: String) -> Result<String, E>
+        where
+            E: de::Error,
+        {
+            Ok(value)
+        }
+        
+        fn visit_seq<A>(self, mut seq: A) -> Result<String, A::Error>
+        where
+            A: de::SeqAccess<'de>,
+        {
+            let mut result = String::new();
+            while let Some(value) = seq.next_element::<Value>()? {
+                if let Some(obj) = value.as_object() {
+                    if let Some(text) = obj.get("text").and_then(|v| v.as_str()) {
+                        if !result.is_empty() {
+                            result.push('\n');
+                        }
+                        result.push_str(text);
+                    }
+                }
+            }
+            Ok(result)
+        }
+    }
+    
+    deserializer.deserialize_any(ContentVisitor)
 }
 
 /// Represents a single hook configuration

@@ -99,18 +99,20 @@ pub fn handle_session(session_id: Option<String>) -> Result<()> {
                 let entry: SessionEntry = serde_json::from_str(&line)?;
 
                 if project_cwd.is_none() {
-                    project_cwd = Some(entry.cwd.clone());
+                    project_cwd = entry.cwd.clone();
                 }
 
                 if first_timestamp.is_none() {
-                    first_timestamp = Some(entry.timestamp.clone());
+                    first_timestamp = entry.timestamp.clone();
                 }
 
                 if entry.message_type == "user"
-                    && entry.user_type == "external"
+                    && entry.user_type.as_deref() == Some("external")
                     && first_user_message.is_none()
                 {
-                    first_user_message = Some(entry.message.content.clone());
+                    if let Some(ref message) = entry.message {
+                        first_user_message = Some(message.content.clone());
+                    }
                 }
             }
 
