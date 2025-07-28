@@ -33,11 +33,8 @@ claco agents list
 claco agents import https://github.com/owner/repo/blob/main/agent.md --scope user
 # Import agent from local file
 claco agents import ../my-agent.md --scope project
-# Generate new agent using Claude (or use 'gen' shortcut)
-claco agents generate "Create a security analyst agent"
-claco agents gen "Create a security analyst agent"
 # Generate agent template with all properties
-claco agents gen "my-agent" --template
+claco agents gen "my-agent"
 ```
 
 Manage Slash Commands
@@ -48,10 +45,7 @@ claco commands list
 # Import command from github repo
 claco commands import https://github.com/amantus-ai/vibetunnel/blob/main/.claude/commands/review-pr.md
 # Generate command via claude code cli (or use 'gen' shortcut)
-claco commands generate "Checkout yesterday's pull request and generate report"
-claco commands gen "Checkout yesterday's pull request and generate report"
-# Generate command template with all frontmatter properties
-claco commands gen "my-command" --template
+claco commands gen "my-command"
 ```
 
 Manage Hooks
