@@ -9,10 +9,6 @@ pub struct Config {
     pub verbose: bool,
     pub log_level: String,
     pub data_dir: PathBuf,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub performance_tracking: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_concurrent_operations: Option<usize>,
 }
 
 impl Default for Config {
@@ -21,8 +17,6 @@ impl Default for Config {
             verbose: false,
             log_level: "info".to_string(),
             data_dir: Self::default_data_dir(),
-            performance_tracking: None,
-            max_concurrent_operations: None,
         }
     }
 }
@@ -32,15 +26,11 @@ impl Config {
         let config_path = Self::config_path()?;
 
         if config_path.exists() {
-            Self::load_from_file(&config_path)
+            let content = fs::read_to_string(&config_path)?;
+            Ok(serde_json::from_str(&content)?)
         } else {
             Ok(Self::default())
         }
-    }
-
-    fn load_from_file(path: &PathBuf) -> Result<Self> {
-        let content = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&content)?)
     }
 
     pub fn save(&self) -> Result<()> {

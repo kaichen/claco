@@ -3,11 +3,8 @@ use claco::{claude_home, SessionEntry};
 use regex::Regex;
 use std::fs;
 use std::io::{BufRead, BufReader};
-use tracing::debug;
 
 use super::format_timestamp_local;
-
-const BUFFER_SIZE: usize = 16 * 1024;
 
 /// Display history of user messages for the current project
 ///
@@ -20,10 +17,8 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
     // Get current working directory
     let cwd = std::env::current_dir()?;
     let cwd_str = cwd.to_string_lossy();
-    debug!("Current working directory: {}", cwd_str);
 
     let projects_dir = claude_home()?.join("projects");
-    debug!("Looking for projects in: {:?}", projects_dir);
 
     if !projects_dir.exists() {
         println!("No Claude projects directory found");
@@ -48,13 +43,11 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
 
             if session_path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
                 if let Ok(file) = fs::File::open(&session_path) {
-                    let reader = BufReader::with_capacity(BUFFER_SIZE, file);
+                    let reader = BufReader::new(file);
                     if let Some(Ok(first_line)) = reader.lines().next() {
                         if let Ok(entry) = serde_json::from_str::<SessionEntry>(&first_line) {
                             if let Some(ref entry_cwd) = entry.cwd {
-                                debug!("Checking project cwd: {} against current: {}", entry_cwd, cwd_str);
                                 if entry_cwd == &cwd_str {
-                                    debug!("Found matching project directory");
                                     matched_project_path = Some(path);
                                     break 'outer;
                                 }
@@ -100,15 +93,13 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
             // If session_id is specified, only process that session
             if let Some(ref sid) = session_id {
                 if file_name != *sid {
-                    debug!("Skipping session {}, looking for {}", file_name, sid);
                     continue;
                 }
-                debug!("Processing requested session: {}", sid);
             }
 
             // Read and parse JSONL file
             let file = fs::File::open(&path)?;
-            let reader = BufReader::with_capacity(BUFFER_SIZE, file);
+            let reader = BufReader::new(file);
 
             let mut skip_next = false;
 
