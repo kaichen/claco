@@ -9,6 +9,10 @@ pub struct Config {
     pub verbose: bool,
     pub log_level: String,
     pub data_dir: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub performance_tracking: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_concurrent_operations: Option<usize>,
 }
 
 impl Default for Config {
@@ -17,6 +21,8 @@ impl Default for Config {
             verbose: false,
             log_level: "info".to_string(),
             data_dir: Self::default_data_dir(),
+            performance_tracking: None,
+            max_concurrent_operations: None,
         }
     }
 }
