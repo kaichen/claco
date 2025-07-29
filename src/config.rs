@@ -32,11 +32,15 @@ impl Config {
         let config_path = Self::config_path()?;
 
         if config_path.exists() {
-            let content = fs::read_to_string(&config_path)?;
-            Ok(serde_json::from_str(&content)?)
+            Self::load_from_file(&config_path)
         } else {
             Ok(Self::default())
         }
+    }
+
+    fn load_from_file(path: &PathBuf) -> Result<Self> {
+        let content = fs::read_to_string(path)?;
+        Ok(serde_json::from_str(&content)?)
     }
 
     pub fn save(&self) -> Result<()> {
