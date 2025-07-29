@@ -7,6 +7,8 @@ use tracing::debug;
 
 use super::format_timestamp_local;
 
+const BUFFER_SIZE: usize = 16 * 1024;
+
 /// Display history of user messages for the current project
 ///
 /// Shows all user input messages from Claude Code sessions in the current directory.
@@ -46,7 +48,7 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
 
             if session_path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
                 if let Ok(file) = fs::File::open(&session_path) {
-                    let reader = BufReader::new(file);
+                    let reader = BufReader::with_capacity(BUFFER_SIZE, file);
                     if let Some(Ok(first_line)) = reader.lines().next() {
                         if let Ok(entry) = serde_json::from_str::<SessionEntry>(&first_line) {
                             if let Some(ref entry_cwd) = entry.cwd {
@@ -106,7 +108,7 @@ pub fn handle_history(session_id: Option<String>) -> Result<()> {
 
             // Read and parse JSONL file
             let file = fs::File::open(&path)?;
-            let reader = BufReader::new(file);
+            let reader = BufReader::with_capacity(BUFFER_SIZE, file);
 
             let mut skip_next = false;
 
