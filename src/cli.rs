@@ -1,5 +1,8 @@
 use clap::{Parser, Subcommand};
 
+const DEFAULT_SCOPE: &str = "project";
+const DEFAULT_INTERACTIVE: &str = "true";
+
 /// `claco` (Claude Code Helper) is a CLI tool for boosting Claude Code productive.
 #[derive(Parser)]
 #[command(name = "claco")]
@@ -56,7 +59,7 @@ pub enum HooksAction {
     /// Add a new hook
     Add {
         /// Scope to add hook to (user or project)
-        #[arg(long, default_value = "project")]
+        #[arg(long, default_value = DEFAULT_SCOPE)]
         scope: String,
         /// Event type to hook into
         #[arg(long)]
@@ -71,7 +74,7 @@ pub enum HooksAction {
     /// Delete hooks interactively
     Delete {
         /// Interactive mode to select and delete hooks
-        #[arg(long, default_value = "true")]
+        #[arg(long, default_value = DEFAULT_INTERACTIVE)]
         interactive: bool,
     },
 }
@@ -118,6 +121,14 @@ pub enum Scope {
     Project,
     #[value(name = "project.local")]
     ProjectLocal,
+}
+
+impl Scope {
+    pub fn validate(&self) -> bool {
+        match self {
+            Scope::User | Scope::Project | Scope::ProjectLocal => true,
+        }
+    }
 }
 
 #[derive(Subcommand)]
