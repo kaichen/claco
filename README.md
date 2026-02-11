@@ -19,12 +19,22 @@ On Linux/macOS:
 
 ## Features and Usage
 
+- **init**: Initialize a new Claude Code project in the current directory
 - **agents**: Manage custom agents (list, import, delete, clean, generate)
 - **commands**: Manage slash commands configurations
 - **hooks**: Manage hooks configuration
 - **history**: Lists all user input messages for the current project
 - **session**: Shows session info including first user message and timestamp
 - **projects**: Lists all projects with their session IDs
+
+Initialize a Claude Code Project
+
+```bash
+# Initialize a new Claude Code project in the current directory
+claco init
+# Force re-initialization if project already exists
+claco init --force
+```
 
 Manage Custom Sub Agents
 

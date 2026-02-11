@@ -19,12 +19,22 @@
 
 ## 功能和使用
 
+- **init**：在当前目录中初始化一个新的 Claude Code 项目
 - **agents**：管理自定义代理（列出、导入、删除、清理、生成）
 - **commands**：管理斜杠命令配置
 - **hooks**：管理钩子配置
 - **history**：列出当前项目的所有用户输入消息
 - **session**：显示会话信息，包括第一条用户消息和时间戳
 - **projects**：列出所有项目及其会话 ID
+
+初始化 Claude Code 项目
+
+```bash
+# 在当前目录中初始化一个新的 Claude Code 项目
+claco init
+# 如果项目已存在，强制重新初始化
+claco init --force
+```
 
 管理自定义子代理(Subagents)
 
