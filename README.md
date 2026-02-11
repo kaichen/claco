@@ -19,12 +19,22 @@ On Linux/macOS:
 
 ## Features and Usage
 
+- **repo**: Initialize Claude Code project structure in current directory
 - **agents**: Manage custom agents (list, import, delete, clean, generate)
 - **commands**: Manage slash commands configurations
 - **hooks**: Manage hooks configuration
 - **history**: Lists all user input messages for the current project
 - **session**: Shows session info including first user message and timestamp
 - **projects**: Lists all projects with their session IDs
+
+Initialize Claude Code Project
+
+```bash
+# Initialize .claude directory structure in current project
+claco repo
+# Or use the alias
+claco init
+```
 
 Manage Custom Sub Agents
 

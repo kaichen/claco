@@ -19,12 +19,22 @@
 
 ## 功能和使用
 
+- **repo**：在当前目录初始化 Claude Code 项目结构
 - **agents**：管理自定义代理（列出、导入、删除、清理、生成）
 - **commands**：管理斜杠命令配置
 - **hooks**：管理钩子配置
 - **history**：列出当前项目的所有用户输入消息
 - **session**：显示会话信息，包括第一条用户消息和时间戳
 - **projects**：列出所有项目及其会话 ID
+
+初始化 Claude Code 项目
+
+```bash
+# 在当前项目中初始化 .claude 目录结构
+claco repo
+# 或使用别名
+claco init
+```
 
 管理自定义子代理(Subagents)
 
