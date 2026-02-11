@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use claco::claude::{project_settings_path, save_settings, Settings};
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Handle the init command
 pub fn handle_init(force: bool) -> Result<()> {
@@ -42,26 +42,20 @@ pub fn handle_init(force: bool) -> Result<()> {
 }
 
 /// Create the directory structure for a Claude Code project
-fn create_directory_structure(claude_dir: &PathBuf) -> Result<()> {
+fn create_directory_structure(claude_dir: &Path) -> Result<()> {
     // Create main .claude directory
-    fs::create_dir_all(claude_dir).context(format!(
-        "Failed to create directory: {}",
-        claude_dir.display()
-    ))?;
+    fs::create_dir_all(claude_dir)
+        .with_context(|| format!("Failed to create directory: {}", claude_dir.display()))?;
 
     // Create subdirectories
     let agents_dir = claude_dir.join("agents");
     let commands_dir = claude_dir.join("commands");
 
-    fs::create_dir_all(&agents_dir).context(format!(
-        "Failed to create directory: {}",
-        agents_dir.display()
-    ))?;
+    fs::create_dir_all(&agents_dir)
+        .with_context(|| format!("Failed to create directory: {}", agents_dir.display()))?;
 
-    fs::create_dir_all(&commands_dir).context(format!(
-        "Failed to create directory: {}",
-        commands_dir.display()
-    ))?;
+    fs::create_dir_all(&commands_dir)
+        .with_context(|| format!("Failed to create directory: {}", commands_dir.display()))?;
 
     Ok(())
 }
@@ -88,7 +82,8 @@ fn create_gitignore(current_dir: &Path) -> Result<()> {
     // Check if .gitignore exists
     if gitignore_path.exists() {
         // Read existing content
-        let content = fs::read_to_string(&gitignore_path).context("Failed to read .gitignore")?;
+        let content =
+            fs::read_to_string(&gitignore_path).with_context(|| "Failed to read .gitignore")?;
 
         // Check if the entry already exists
         if !content.contains("settings.local.json") {
@@ -99,11 +94,13 @@ fn create_gitignore(current_dir: &Path) -> Result<()> {
             }
             updated_content.push_str(settings_local_entry);
 
-            fs::write(&gitignore_path, updated_content).context("Failed to update .gitignore")?;
+            fs::write(&gitignore_path, updated_content)
+                .with_context(|| "Failed to update .gitignore")?;
         }
     } else {
         // Create new .gitignore
-        fs::write(&gitignore_path, settings_local_entry).context("Failed to create .gitignore")?;
+        fs::write(&gitignore_path, settings_local_entry)
+            .with_context(|| "Failed to create .gitignore")?;
     }
 
     Ok(())
