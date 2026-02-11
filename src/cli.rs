@@ -43,6 +43,9 @@ pub enum Commands {
     /// Manage Claude Code settings
     #[command(subcommand)]
     Settings(SettingsSubcommand),
+    /// Initialize Claude Code project structure
+    #[command(alias = "init")]
+    Repo,
 }
 
 #[derive(Subcommand)]

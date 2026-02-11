@@ -29,6 +29,7 @@ async fn main() -> Result<()> {
         Commands::Session { session_id } => commands::handle_session(session_id)?,
         Commands::Projects => commands::handle_projects()?,
         Commands::Settings(cmd) => commands::handle_settings(cmd).await?,
+        Commands::Repo => commands::handle_repo()?,
     }
 
     Ok(())
