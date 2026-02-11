@@ -43,6 +43,12 @@ pub enum Commands {
     /// Manage Claude Code settings
     #[command(subcommand)]
     Settings(SettingsSubcommand),
+    /// Initialize a new Claude Code project in the current directory
+    Init {
+        /// Force initialization even if .claude directory already exists
+        #[arg(short, long)]
+        force: bool,
+    },
 }
 
 #[derive(Subcommand)]
